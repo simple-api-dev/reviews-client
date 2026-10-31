@@ -151,4 +151,39 @@ void main() {
     final (api, _) = apiWith((_) => http.Response('oops', 500));
     await expectLater(api.listSubjects(), throwsA(isA<ApiException>().having((e) => e.message, 'message', contains('500'))));
   });
+
+  // Real bodies captured from https://reviews.simpleapi.dev (tool/live_check).
+  group('a 401 on a request that carried a token', () {
+    test('drops the dead token and tells the app, keeping the API message', () async {
+      var expired = 0;
+      final client = MockClient((_) async => json({'message': 'Invalid auth token. Log in again.'}, 401));
+      final api = ReviewsApi(apiKey: fakeKey, token: 'old', client: client, onSessionExpired: () => expired++);
+
+      await expectLater(
+        api.createReview(subject: 'x', rating: 5),
+        throwsA(isA<ApiException>().having((e) => e.statusCode, 'status', 401).having((e) => e.message, 'message', 'Invalid auth token. Log in again.')),
+      );
+      expect(api.token, isNull);
+      expect(expired, 1);
+    });
+
+    test('a bad apikey is a different 401: the token is kept', () async {
+      var expired = 0;
+      final client = MockClient((_) async => json({'message': 'Unauthorized.  Invalid apikey detected [x]. Register for a free apikey at https://keys.simpleapi.dev'}, 401));
+      final api = ReviewsApi(apiKey: fakeKey, token: 'good', client: client, onSessionExpired: () => expired++);
+
+      await expectLater(api.listSubjects(), throwsA(isA<ApiException>()));
+      expect(api.token, 'good');
+      expect(expired, 0);
+    });
+
+    test('a 401 with no token sent (login first) does not call it a lost session', () async {
+      var expired = 0;
+      final client = MockClient((_) async => json({'message': 'Unauthorized. Log in and send the header "Authorization: Bearer <token>".'}, 401));
+      final api = ReviewsApi(apiKey: fakeKey, client: client, onSessionExpired: () => expired++);
+
+      await expectLater(api.addComment(1, 'hi'), throwsA(isA<ApiException>().having((e) => e.statusCode, 'status', 401)));
+      expect(expired, 0);
+    });
+  });
 }

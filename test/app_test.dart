@@ -229,4 +229,51 @@ void main() {
     expect(jsonDecode(post.body), {'subject': 'blue-bike', 'rating': 5, 'title': 'Great', 'body': 'Would ride again'});
     expect(post.headers['Authorization'], 'Bearer tok');
   });
+
+  testWidgets('a vote rejected because the session ended asks for a login the next time', (tester) async {
+    var logins = 0;
+    await pumpApp(
+      tester,
+      store: MemoryKeyStore('k'),
+      server: (r) {
+        switch (r.url.path) {
+          case '/api/reviews':
+            return json(reviews);
+          case '/api/users/login':
+            logins++;
+            return json({'id': 1, 'name': 'Jane', 'token': 'tok-$logins'});
+          case '/api/reviews/7/helpful':
+            // Real answer once the same user has logged in somewhere else.
+            return r.headers['Authorization'] == 'Bearer tok-1'
+                ? json({'message': 'Invalid auth token. Log in again.'}, 401)
+                : json({'helpful_counter': 1, 'unhelpful_counter': 0, 'your_vote': 'helpful'});
+          default:
+            return json(subjects);
+        }
+      },
+    );
+    await tester.tap(find.text('blue-bike'));
+    await tester.pumpAndSettle();
+
+    Future<void> logIn() async {
+      await tester.enterText(find.widgetWithText(TextField, 'Email'), 'test-user');
+      await tester.enterText(find.widgetWithText(TextField, 'Password'), 'pw');
+      await tester.tap(find.widgetWithText(FilledButton, 'Log in'));
+      await tester.pumpAndSettle();
+    }
+
+    await tester.tap(find.text('Helpful 0'));
+    await tester.pumpAndSettle();
+    await logIn(); // token 1, which the fake server now rejects
+
+    expect(find.text('Invalid auth token. Log in again.'), findsOneWidget);
+    expect(find.text('Helpful 0'), findsOneWidget);
+
+    // Before the fix the app still thought it was logged in and failed again.
+    await tester.tap(find.text('Helpful 0'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(FilledButton, 'Log in'), findsOneWidget);
+    await logIn(); // token 2 works
+    expect(find.text('Helpful 1'), findsOneWidget);
+  });
 }
