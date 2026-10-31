@@ -10,7 +10,7 @@ import 'reviews_screen.dart';
 import 'settings_screen.dart';
 import 'ui.dart';
 
-/// Screen 2: browse subjects (things that have reviews).
+/// Browse subjects (things that have reviews).
 class SubjectsScreen extends StatefulWidget {
   const SubjectsScreen({super.key, required this.state, required this.openUrl});
 
@@ -142,7 +142,12 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                   if (!snap.hasData) return const Center(child: CircularProgressIndicator());
                   final subjects = snap.data!;
                   if (subjects.isEmpty) {
-                    return const Center(child: Text('No subjects yet. Use "Review something new" to add the first review.'));
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Text('No subjects yet. Use "Review something new" to add the first review.', textAlign: TextAlign.center),
+                      ),
+                    );
                   }
                   return ListView.separated(
                     itemCount: subjects.length,
@@ -186,7 +191,7 @@ class _NoKey extends StatelessWidget {
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           const Text('This demo has no key configured', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
-          const Text('Get a free SimpleApi key, then paste it under Settings to try the app.', textAlign: TextAlign.center),
+          const Text('Get a free key, then paste it under Settings.', textAlign: TextAlign.center),
           const SizedBox(height: 12),
           FilledButton(onPressed: () => openUrl(getKeyUrl), child: const Text('Get a free key')),
         ]),

@@ -1,4 +1,4 @@
-/// Where the developer's SimpleApi key is remembered between visits.
+/// Where the developer's SimpleAPI key is remembered between visits.
 ///
 /// The app only ever talks to this small interface. In the browser it is
 /// backed by localStorage (key_store_web.dart); tests use [MemoryKeyStore].

@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../app_state.dart';
+import '../reviews_api.dart';
 import 'ui.dart';
 
-/// Screen 3: log in or register. Users belong to your key, so you can
+/// Log in or register. Users belong to your key, so you can
 /// register freely; there is no email check unless you register the email
 /// address your key belongs to (then a code is emailed, see the README).
 class AuthScreen extends StatefulWidget {
@@ -49,7 +50,9 @@ class _AuthScreenState extends State<AuthScreen> {
       widget.state.loggedInAs(result.name.isEmpty ? 'you' : result.name);
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
-      if (mounted) setState(() => _error = describeError(e));
+      // The shared demo key holds only 25 users, so on a busy demo the API answers 403.
+      final demoFull = _register && !widget.state.usingOwnKey && e is ApiException && e.statusCode == 403;
+      if (mounted) setState(() => _error = demoFull ? demoFullMessage : describeError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -61,6 +64,7 @@ class _AuthScreenState extends State<AuthScreen> {
       appBar: AppBar(title: Text(_register ? 'Register' : 'Log in')),
       body: Centered(
         child: ListView(padding: const EdgeInsets.all(24), children: [
+          if (!widget.state.usingOwnKey) ...[const DemoNotice(), const SizedBox(height: 16)],
           if (_register) ...[
             TextField(controller: _name, decoration: const InputDecoration(labelText: 'Name', border: OutlineInputBorder())),
             const SizedBox(height: 12),
@@ -74,7 +78,11 @@ class _AuthScreenState extends State<AuthScreen> {
           TextField(
             controller: _password,
             obscureText: true,
-            decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder()),
+            decoration: InputDecoration(
+              labelText: 'Password',
+              border: const OutlineInputBorder(),
+              helperText: _register ? 'At least 8 characters' : null,
+            ),
             onSubmitted: (_) => _submit(),
           ),
           if (_error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),

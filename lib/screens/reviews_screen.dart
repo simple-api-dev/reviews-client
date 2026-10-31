@@ -14,7 +14,7 @@ Future<bool> ensureLoggedIn(BuildContext context, AppState state) async {
   return state.loggedIn;
 }
 
-/// Screen 4: the reviews of one subject, with the average, star breakdown,
+/// The reviews of one subject, with the average, star breakdown,
 /// voting and a form to write your own review.
 class ReviewsScreen extends StatefulWidget {
   const ReviewsScreen({super.key, required this.state, required this.subject});

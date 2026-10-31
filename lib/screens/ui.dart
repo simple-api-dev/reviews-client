@@ -2,8 +2,19 @@ import 'package:flutter/material.dart';
 
 import '../reviews_api.dart';
 
-/// Turns any error into a sentence the user can read.
-String describeError(Object e) => e is ApiException ? e.message : 'Something went wrong: $e';
+/// Turns any error into a sentence the user can read. The wording is shared by
+/// all the SimpleAPI sample apps.
+String describeError(Object e) {
+  if (e is! ApiException) return 'Something went wrong. Please try again.';
+  if (e.statusCode == 0) return e.message; // "Could not reach <host>. Check your connection and try again."
+  if (e.sessionEnded) return 'Your session has ended. Please log in again.';
+  if (e.keyRejected) return 'The API key was not accepted. Check it under Settings.';
+  return switch (e.statusCode) {
+    404 => 'Not found. It may already have been deleted.',
+    429 => 'Too many requests. Wait a few seconds and try again.',
+    _ => e.message, // 401 login, 403, 409, 422 and the rest: the API's own message
+  };
+}
 
 void showSnack(BuildContext context, String text) {
   ScaffoldMessenger.of(context)
@@ -54,4 +65,24 @@ class Centered extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       Align(alignment: Alignment.topCenter, child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 720), child: child));
+}
+
+/// Said on the login and register screens while the shared demo key is in use.
+const demoNoticeText = 'Demo accounts are shared and public. Do not use a real password or any private details.';
+
+/// Shown instead of the API's message when the shared demo key has no room for another user.
+const demoFullMessage = 'The shared demo has reached its limit of 25 users. Get a free key and paste it under Settings to register your own users.';
+
+class DemoNotice extends StatelessWidget {
+  const DemoNotice({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(8)),
+      child: Text(demoNoticeText, style: TextStyle(color: scheme.onSecondaryContainer)),
+    );
+  }
 }

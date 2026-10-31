@@ -5,7 +5,7 @@ import '../models.dart';
 import 'reviews_screen.dart' show ensureLoggedIn;
 import 'ui.dart';
 
-/// Screen 5: one review and its comments, with a box to add a comment.
+/// One review and its comments, with a box to add a comment.
 class ReviewScreen extends StatefulWidget {
   const ReviewScreen({super.key, required this.state, required this.review});
 
