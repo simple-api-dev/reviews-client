@@ -36,7 +36,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
   // GET /api/reviews/{id}/comments
   Future<List<Comment>> _load() => widget.state.api.listComments(widget.review.id);
 
-  void _reload() => setState(() => _future = _load());
+  void _reload() => setState(() {
+        _future = _load();
+      });
 
   Future<void> _send() async {
     final body = _text.text.trim();
