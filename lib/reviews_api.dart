@@ -84,17 +84,31 @@ class ReviewsApi {
   // ------------------------------------------------------------------ users
 
   /// POST /api/users/register - create a user that belongs to this key.
-  /// Answers 200 with a token, or 202 (no token) when the email is the one the
-  /// key belongs to and a confirmation code was emailed instead.
+  /// Answers 201 with a token (older deployments answered 200, so any 2xx with
+  /// a token is accepted), or 202 (no token) when the email is the one the key
+  /// belongs to and a confirmation code was emailed instead. Errors: 409 the
+  /// email is taken, 422 invalid input.
   Future<AuthResult> register({required String name, required String email, required String password}) async {
-    final json = await _send('POST', '/api/users/register', body: {'name': name, 'email': email, 'password': password});
+    final json = await _send('POST', '/api/users/register', body: {'name': name, 'email': email, 'password': password}, authenticated: false);
     return _authResult(json);
   }
 
-  /// POST /api/users/login - returns the user and a token.
+  /// POST /api/users/login - returns the user and a token. A wrong email or
+  /// password is a 401 "Invalid email or password." - not an expired session,
+  /// so it never touches the token the app may be holding.
   Future<AuthResult> login({required String email, required String password}) async {
-    final json = await _send('POST', '/api/users/login', body: {'email': email, 'password': password});
+    final json = await _send('POST', '/api/users/login', body: {'email': email, 'password': password}, authenticated: false);
     return _authResult(json);
+  }
+
+  /// DELETE /api/users/me - delete your own account. The current [password]
+  /// goes in the JSON body (403 if wrong, 422 if missing). With [purge] the
+  /// API also deletes your reviews, your comments, every comment on your
+  /// reviews and all your votes (`?purge=true`); without it they stay,
+  /// attributed to your deleted user id. Either way the token stops working.
+  Future<void> deleteAccount({required String password, bool purge = false}) async {
+    await _send('DELETE', '/api/users/me', query: {if (purge) 'purge': 'true'}, body: {'password': password});
+    token = null;
   }
 
   /// POST /api/users/logout - invalidates the current token.
@@ -153,17 +167,20 @@ class ReviewsApi {
   // ---------------------------------------------------------------- plumbing
 
   /// Sends one request and returns the decoded JSON. A JSON array is wrapped
-  /// as `{'_list': [...]}` so every caller gets a Map.
+  /// as `{'_list': [...]}` so every caller gets a Map. Login and register pass
+  /// `authenticated: false`: they need only the key, and their 401/409/422
+  /// answers are about the credentials, not about a session.
   Future<Map<String, dynamic>> _send(
     String method,
     String path, {
     Map<String, String> query = const {},
     Map<String, Object?>? body,
+    bool authenticated = true,
   }) async {
     final uri = Uri.https(host, path, {...query, 'apikey': apiKey});
     final request = http.Request(method, uri)
       ..headers['Accept'] = 'application/json'
-      ..headers.addAll({if (token != null) 'Authorization': 'Bearer $token'});
+      ..headers.addAll({if (authenticated && token != null) 'Authorization': 'Bearer $token'});
     if (body != null) {
       request.headers['Content-Type'] = 'application/json';
       request.body = jsonEncode(body);

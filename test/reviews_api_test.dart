@@ -211,9 +211,28 @@ void main() {
       expect(e.message, contains('author or an admin'));
     });
 
-    test('404 wrong password on login (the API does not use 401 here)', () async {
-      final e = await fails(404, {'message': 'Login Failed (jane@example.com)'}, (a) => a.login(email: 'jane@example.com', password: 'nope'));
-      expect(e.message, 'Login Failed (jane@example.com)');
+    test('401 wrong email or password on login', () async {
+      final e = await fails(401, {'message': 'Invalid email or password.'}, (a) => a.login(email: 'jane@example.com', password: 'nope'));
+      expect(e.statusCode, 401);
+      expect(e.message, 'Invalid email or password.');
+    });
+
+    test('a failed login is not an expired session: the token is kept and not sent', () async {
+      var expired = 0;
+      final seen = <http.Request>[];
+      final api = ReviewsApi(
+        apiKey: fakeKey,
+        token: 'still-good',
+        client: MockClient((r) async {
+          seen.add(r);
+          return json({'message': 'Invalid email or password.'}, 401);
+        }),
+        onSessionExpired: () => expired++,
+      );
+      await expectLater(api.login(email: 'a@b.co', password: 'nope'), throwsA(isA<ApiException>()));
+      expect(expired, 0);
+      expect(api.token, 'still-good');
+      expect(seen.single.headers.containsKey('Authorization'), isFalse);
     });
 
     test('404 comments of a missing review', () async {
@@ -250,13 +269,29 @@ void main() {
       expect(e.message, 'The password must be at least 8 characters.');
     });
 
-    test('400 duplicate register (undocumented status, same shape)', () async {
+    test('409 duplicate register', () async {
       final e = await fails(
-        400,
+        409,
         {'message': 'User registration failed, email already registered to this developer account.'},
         (a) => a.register(name: 'J', email: 'a@b.co', password: 'longenough'),
       );
+      expect(e.statusCode, 409);
       expect(e.message, contains('already registered'));
+    });
+
+    test('400 malformed JSON body', () async {
+      final e = await fails(
+        400,
+        {'message': 'The request body is not valid JSON: Syntax error'},
+        (a) => a.login(email: 'a@b.co', password: 'longenough'),
+      );
+      expect(e.statusCode, 400);
+      expect(e.message, startsWith('The request body is not valid JSON'));
+    });
+
+    test('422 register with an email that has no dotted domain', () async {
+      final e = await fails(422, {'message': 'The email format is invalid.'}, (a) => a.register(name: 'J', email: 'a@b', password: 'longenough'));
+      expect(e.statusCode, 422);
     });
 
     test('429 throttling, with or without a JSON body, is readable and does not drop the login', () async {
@@ -298,5 +333,96 @@ void main() {
     expect(review.id, 4);
     expect(review.commentCount, 0);
     expect((await api.vote(4, helpful: true)).yourVote, 'helpful');
+  });
+
+  group('register accepts 200 (old deployment) and 201', () {
+    for (final status in [200, 201]) {
+      test('$status with a token logs the new user in', () async {
+        final (api, seen) = apiWith((_) => json({'id': 3, 'name': 'Jane', 'email': 'j@x.co', 'admin': false, 'token': 'tok-$status'}, status));
+        final result = await api.register(name: 'Jane', email: 'j@x.co', password: 'longenough');
+        expect(result.token, 'tok-$status');
+        expect(api.token, 'tok-$status');
+        expect(seen.single.method, 'POST');
+        expect(seen.single.url.path, '/api/users/register');
+      });
+    }
+
+    test('202 (the key owner\'s email) returns the message and no token', () async {
+      final (api, _) = apiWith((_) => json({'message': 'We sent a 6 digit code.', 'confirmation_required': true}, 202));
+      final result = await api.register(name: 'Dev', email: 'dev@x.co', password: 'longenough');
+      expect(result.token, isNull);
+      expect(result.message, 'We sent a 6 digit code.');
+      expect(api.token, isNull);
+    });
+  });
+
+  test('comment_count is read from a single-review response', () async {
+    final (api, _) = apiWith(
+      (_) => json({'id': 9, 'subject': 's', 'author': 'Ann', 'rating': 4, 'helpful_counter': 0, 'unhelpful_counter': 0, 'comment_count': 3}),
+      token: 'tok',
+    );
+    final review = await api.createReview(subject: 's', rating: 4);
+    expect(review.commentCount, 3);
+  });
+
+  group('deleteAccount (DELETE /api/users/me)', () {
+    test('sends the password in the JSON body, no purge by default, then forgets the token', () async {
+      final (api, seen) = apiWith((_) => json({'message': 'Account deleted.'}), token: 'tok');
+      await api.deleteAccount(password: 'secret-pw');
+
+      final r = seen.single;
+      expect(r.method, 'DELETE');
+      expect(r.url.path, '/api/users/me');
+      expect(r.url.queryParameters.containsKey('purge'), isFalse);
+      expect(r.url.queryParameters['apikey'], fakeKey);
+      expect(r.headers['Authorization'], 'Bearer tok');
+      expect(jsonDecode(r.body), {'password': 'secret-pw'});
+      expect(r.url.toString().contains('secret-pw'), isFalse); // never in the URL
+      expect(api.token, isNull);
+    });
+
+    test('purge adds ?purge=true', () async {
+      final (api, seen) = apiWith(
+        (_) => json({'message': 'Account deleted.', 'purged': {'reviews': 1, 'comments': 2, 'votes': 3}}),
+        token: 'tok',
+      );
+      await api.deleteAccount(password: 'secret-pw', purge: true);
+      expect(seen.single.url.queryParameters['purge'], 'true');
+      expect(jsonDecode(seen.single.body), {'password': 'secret-pw'});
+    });
+
+    test('403 wrong password keeps the login', () async {
+      var expired = 0;
+      final api = ReviewsApi(
+        apiKey: fakeKey,
+        token: 'tok',
+        client: MockClient((_) async => json({'message': 'Wrong password.'}, 403)),
+        onSessionExpired: () => expired++,
+      );
+      final e = await api.deleteAccount(password: 'nope').then<ApiException?>((_) => null, onError: (Object e) => e as ApiException);
+      expect(e?.statusCode, 403);
+      expect(e?.message, 'Wrong password.');
+      expect(api.token, 'tok');
+      expect(expired, 0);
+    });
+
+    test('422 missing password', () async {
+      final (api, _) = apiWith((_) => json({'message': 'The password field is required.'}, 422), token: 'tok');
+      await expectLater(api.deleteAccount(password: ''), throwsA(isA<ApiException>().having((e) => e.statusCode, 'status', 422)));
+      expect(api.token, 'tok');
+    });
+
+    test('401 (token no longer valid) ends the session', () async {
+      var expired = 0;
+      final api = ReviewsApi(
+        apiKey: fakeKey,
+        token: 'old',
+        client: MockClient((_) async => json({'message': 'Invalid auth token. Log in again.'}, 401)),
+        onSessionExpired: () => expired++,
+      );
+      await expectLater(api.deleteAccount(password: 'pw'), throwsA(isA<ApiException>()));
+      expect(expired, 1);
+      expect(api.token, isNull);
+    });
   });
 }
