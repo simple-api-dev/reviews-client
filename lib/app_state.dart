@@ -1,44 +1,64 @@
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import 'config.dart';
 import 'key_store.dart';
 import 'reviews_api.dart';
 
-/// The app's only shared state: the saved key and who is logged in.
+/// The app's only shared state: which key is in use and who is logged in.
 /// Screens listen to it with [ListenableBuilder].
+///
+/// The key comes from the build ([buildKey]) unless the visitor saved their
+/// own in this browser's localStorage, which then takes over.
 class AppState extends ChangeNotifier {
-  AppState({required this.store, this._client}) {
-    final saved = store.read();
-    if (saved != null && saved.isNotEmpty) _api = ReviewsApi(apiKey: saved, client: _client);
+  AppState({required this.store, this.buildKey = configuredKey, this._client}) {
+    final own = store.read();
+    _useKey(
+      own != null && own.isNotEmpty ? own : buildKey,
+      own: own != null && own.isNotEmpty,
+    );
   }
 
   final KeyStore store;
+  final String buildKey;
   final http.Client? _client;
 
   ReviewsApi? _api;
+  bool _usingOwnKey = false;
   String? userName;
 
+  /// Bumped whenever the key changes so screens can reload their data.
+  int keyVersion = 0;
+
   bool get hasKey => _api != null;
+  bool get hasBuildKey => buildKey.isNotEmpty;
+  bool get usingOwnKey => _usingOwnKey;
   bool get loggedIn => _api?.token != null;
 
-  /// The client for the saved key. Only call when [hasKey] is true.
+  /// The client for the current key. Only call when [hasKey] is true.
   ReviewsApi get api => _api!;
 
-  /// Checks [key] with one real call (GET /api/subjects), then remembers it.
-  /// Throws [ApiException] if the API rejects it.
-  Future<void> checkAndSaveKey(String key) async {
-    final candidate = ReviewsApi(apiKey: key, client: _client);
-    await candidate.listSubjects(perPage: 1);
-    store.write(key);
-    _api = candidate;
+  void _useKey(String key, {required bool own}) {
+    _api = key.isEmpty ? null : ReviewsApi(apiKey: key, client: _client);
+    _usingOwnKey = own;
     userName = null;
+    keyVersion++;
+  }
+
+  /// Checks [key] with one real call (GET /api/subjects), then remembers it in
+  /// localStorage and uses it instead of the build key.
+  /// Throws [ApiException] if the API rejects it.
+  Future<void> useOwnKey(String key) async {
+    await ReviewsApi(apiKey: key, client: _client).listSubjects(perPage: 1);
+    store.write(key);
+    _useKey(key, own: true);
     notifyListeners();
   }
 
-  void forgetKey() {
+  /// Forgets the saved key and goes back to the build key (if there is one).
+  void useBuildKey() {
     store.clear();
-    _api = null;
-    userName = null;
+    _useKey(buildKey, own: false);
     notifyListeners();
   }
 

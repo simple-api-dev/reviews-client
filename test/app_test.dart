@@ -29,75 +29,112 @@ const reviews = {
   ],
 };
 
+/// Links the app asked to open.
+final opened = <String>[];
+
 /// Pumps the whole app against a fake server and records the requests.
+/// [buildKey] stands in for the key passed with --dart-define at build time.
 Future<List<http.Request>> pumpApp(
   WidgetTester tester, {
   KeyStore? store,
+  String buildKey = '',
   required http.Response Function(http.Request) server,
 }) async {
   tester.view.physicalSize = const Size(1000, 1600);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
+  opened.clear();
   final seen = <http.Request>[];
   final client = MockClient((r) async {
     seen.add(r);
     return server(r);
   });
-  await tester.pumpWidget(ReviewsApp(state: AppState(store: store ?? MemoryKeyStore(), client: client)));
+  final state = AppState(store: store ?? MemoryKeyStore(), buildKey: buildKey, client: client);
+  await tester.pumpWidget(ReviewsApp(state: state, openUrl: opened.add));
   await tester.pumpAndSettle();
   return seen;
 }
 
+Future<void> openSettings(WidgetTester tester) async {
+  await tester.tap(find.text('Settings'));
+  await tester.pumpAndSettle();
+}
+
 void main() {
-  testWidgets('a pasted key is checked, saved to the store and subjects appear', (tester) async {
-    final store = MemoryKeyStore();
-    final seen = await pumpApp(tester, store: store, server: (_) => json(subjects));
-    expect(find.text('Paste your SimpleApi key'), findsOneWidget);
+  testWidgets('opens straight on subjects using the build-time key', (tester) async {
+    final seen = await pumpApp(tester, buildKey: 'build-key', server: (_) => json(subjects));
+
+    expect(find.text('blue-bike'), findsOneWidget);
+    expect(find.text('2 reviews'), findsOneWidget);
+    expect(find.text('This demo has no key configured'), findsNothing);
+    expect(seen.single.url.queryParameters['apikey'], 'build-key');
+  });
+
+  testWidgets('without any key it explains so, links to get one, and calls nothing', (tester) async {
+    final seen = await pumpApp(tester, server: (_) => json(subjects));
+
+    expect(find.text('This demo has no key configured'), findsOneWidget);
     expect(seen, isEmpty);
 
+    await tester.tap(find.text('Get a free key'));
+    expect(opened, ['https://keys.simpleapi.dev/?product=reviews']);
+  });
+
+  testWidgets('a key saved in this browser overrides the build key', (tester) async {
+    final seen = await pumpApp(
+      tester,
+      store: MemoryKeyStore('own-key'),
+      buildKey: 'build-key',
+      server: (_) => json(subjects),
+    );
+    expect(seen.single.url.queryParameters['apikey'], 'own-key');
+  });
+
+  testWidgets('"Use your own key" validates it, saves it and reloads with it', (tester) async {
+    final store = MemoryKeyStore();
+    final seen = await pumpApp(tester, store: store, buildKey: 'build-key', server: (_) => json(subjects));
+
+    await openSettings(tester);
     await tester.enterText(find.byType(TextField), '  pasted-key ');
     await tester.tap(find.text('Save key'));
     await tester.pumpAndSettle();
 
-    expect(seen.first.url.path, '/api/subjects'); // the key check
-    expect(seen.first.url.queryParameters['apikey'], 'pasted-key'); // trimmed
+    expect(seen.map((r) => r.url.queryParameters['apikey']), ['build-key', 'pasted-key', 'pasted-key']);
     expect(store.read(), 'pasted-key');
     expect(find.text('blue-bike'), findsOneWidget);
   });
 
-  testWidgets('a rejected key is not saved and the API message is shown', (tester) async {
+  testWidgets('a rejected own key is not saved and the API message is shown', (tester) async {
     final store = MemoryKeyStore();
     await pumpApp(
       tester,
       store: store,
-      server: (_) => json({'message': 'Unauthorized.  Invalid apikey detected [nope].'}, 401),
+      buildKey: 'build-key',
+      server: (r) => r.url.queryParameters['apikey'] == 'nope'
+          ? json({'message': 'Unauthorized.  Invalid apikey detected [nope].'}, 401)
+          : json(subjects),
     );
+    await openSettings(tester);
     await tester.enterText(find.byType(TextField), 'nope');
     await tester.tap(find.text('Save key'));
     await tester.pumpAndSettle();
 
     expect(store.read(), isNull);
     expect(find.textContaining('Invalid apikey'), findsOneWidget);
-    expect(find.text('Paste your SimpleApi key'), findsOneWidget);
+    expect(find.text('Settings'), findsWidgets);
   });
 
-  testWidgets('a saved key skips the key screen and lists subjects', (tester) async {
-    final seen = await pumpApp(tester, store: MemoryKeyStore('saved-key'), server: (_) => json(subjects));
+  testWidgets('"Go back to the demo key" forgets the saved key', (tester) async {
+    final store = MemoryKeyStore('own-key');
+    final seen = await pumpApp(tester, store: store, buildKey: 'build-key', server: (_) => json(subjects));
 
-    expect(find.text('blue-bike'), findsOneWidget);
-    expect(find.text('2 reviews'), findsOneWidget);
-    expect(seen.single.url.queryParameters['apikey'], 'saved-key');
-  });
-
-  testWidgets('"Change key" forgets the key and returns to the key screen', (tester) async {
-    final store = MemoryKeyStore('saved-key');
-    await pumpApp(tester, store: store, server: (_) => json(subjects));
-
-    await tester.tap(find.text('Change key'));
+    await openSettings(tester);
+    await tester.tap(find.text('Go back to the demo key'));
     await tester.pumpAndSettle();
 
     expect(store.read(), isNull);
-    expect(find.text('Paste your SimpleApi key'), findsOneWidget);
+    expect(seen.last.url.queryParameters['apikey'], 'build-key');
+    expect(find.text('blue-bike'), findsOneWidget);
   });
 
   testWidgets('an API error is shown with a retry button', (tester) async {
