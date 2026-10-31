@@ -39,7 +39,9 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
   // GET /api/subjects?q=...
   Future<List<Subject>> _load() => widget.state.api.listSubjects(q: _search.text.trim());
 
-  void _reload() => setState(() => _future = _load());
+  void _reload() => setState(() {
+        _future = _load();
+      });
 
   void _open(String subject) async {
     await Navigator.of(context).push(MaterialPageRoute<void>(

@@ -32,6 +32,7 @@ class ReviewsApi {
     this.token,
     http.Client? client,
     this.host = 'reviews.simpleapi.dev',
+    this.onSessionExpired,
   }) : _http = client ?? http.Client();
 
   final String apiKey;
@@ -39,6 +40,11 @@ class ReviewsApi {
 
   /// Set after [login] / [register]; sent as the Bearer token.
   String? token;
+
+  /// Called after the API rejected our Bearer token (401). The API keeps one
+  /// active session per user, so logging in elsewhere makes this token invalid.
+  /// The token is dropped first, so the next write asks for a login again.
+  final void Function()? onSessionExpired;
 
   final http.Client _http;
 
@@ -180,7 +186,14 @@ class ReviewsApi {
     }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw ApiException(response.statusCode, _errorMessage(response.statusCode, decoded));
+      final message = _errorMessage(response.statusCode, decoded);
+      // 401 with a token sent = the session is over ("Invalid auth token. Log
+      // in again."). A 401 about the apikey is a different problem: keep the token.
+      if (response.statusCode == 401 && request.headers.containsKey('Authorization') && !message.toLowerCase().contains('apikey')) {
+        token = null;
+        onSessionExpired?.call();
+      }
+      throw ApiException(response.statusCode, message);
     }
     if (decoded is List) return {'_list': decoded};
     if (decoded is Map<String, dynamic>) return decoded;
