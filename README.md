@@ -8,24 +8,40 @@ is [`http`](https://pub.dev/packages/http).
 
 **Live demo:** https://simple-api-dev.github.io/reviews-client/
 
-## Get a free key
+## Keys
 
-1. Go to https://keys.simpleapi.dev and request a key for the product URL
-   `https://reviews.simpleapi.dev`.
-2. Open the app and paste the key on the first screen.
+This is a **reference implementation**: the live demo opens straight on the
+reviews, with no sign-in or key prompt, because a demo key is compiled into it
+at build time.
 
-The key is kept **only in your browser's localStorage** and is sent only to
-`reviews.simpleapi.dev`, as the `apikey` query parameter. It is never hardcoded
-or committed. Reading is allowed with just the key; writing (reviews, comments,
-votes) also needs a logged-in user, whom you can register inside the app.
-Users belong to your key, so every developer has their own set of users.
+**Use your own key.** In the app open **Settings -> Use your own key** and paste
+a key; it is checked with one call and kept only in your browser's
+localStorage, where it overrides the demo key. Get a free key at
+https://keys.simpleapi.dev/?product=reviews (product URL
+`https://reviews.simpleapi.dev`). Keys are sent only to `reviews.simpleapi.dev`,
+as the `apikey` query parameter. Reading needs just the key; writing (reviews,
+comments, votes) also needs a logged-in user, whom you can register inside the
+app. Users belong to your key, so every developer has their own set of users.
+
+**Set the demo key for your deployment.** The key is read with
+`String.fromEnvironment('SIMPLEAPI_KEY')` and nothing is ever committed:
+
+1. In your repository go to **Settings -> Secrets and variables -> Actions ->
+   Variables** and add a repository **variable** named `SIMPLEAPI_KEY`.
+2. Push to `main` (or run the workflow). It builds with
+   `--dart-define=SIMPLEAPI_KEY=...`.
+
+Anything passed with `--dart-define` ends up in the compiled JavaScript, so
+anyone can read it from the deployed site. Use a free key made for a public
+demo. If the variable is empty, the app shows "This demo has no key
+configured" with a link to get one.
 
 ## Screens and the API calls they use
 
 | Screen | What it does | Calls |
 | --- | --- | --- |
-| **Key** (`key_screen.dart`) | Paste and validate your key; "Change key" forgets it. | `GET /api/subjects` (a one-item request used to check the key) |
-| **Subjects** (`subjects_screen.dart`) | Browse things that have reviews, with count and average; search by name prefix; start a review for a new subject. | `GET /api/subjects` |
+| **Subjects** (`subjects_screen.dart`) | The landing screen. Browse things that have reviews, with count and average; search by name prefix; start a review for a new subject. | `GET /api/subjects` |
+| **Settings** (`settings_screen.dart`) | Use your own key instead of the demo key (or go back to it). | `GET /api/subjects` (a one-item request used to check the key) |
 | **Log in / Register** (`auth_screen.dart`) | Get a token. Opened automatically when you try to write or vote. | `POST /api/users/register`, `POST /api/users/login`, `POST /api/users/logout` |
 | **Reviews** (`reviews_screen.dart`) | One subject: average, 1-5 star breakdown, sortable reviews, helpful / not helpful votes (click again to take a vote back), write a review. | `GET /api/reviews?subject=`, `POST /api/reviews`, `POST /api/reviews/{id}/helpful`, `POST /api/reviews/{id}/unhelpful`, `DELETE /api/reviews/{id}/vote` |
 | **Review** (`review_screen.dart`) | A review with its comments; add a comment. | `GET /api/reviews/{id}/comments`, `POST /api/reviews/{id}/comments` |
@@ -33,7 +49,7 @@ Users belong to your key, so every developer has their own set of users.
 Every call lives in [`lib/reviews_api.dart`](lib/reviews_api.dart), one method
 per endpoint with a comment naming it. The rest of the app never touches HTTP.
 The login token is held in memory only, so reloading the page logs you out
-while the key stays saved.
+while your own key, if you saved one, stays.
 
 The API also has endpoints this sample does not use (editing and deleting your
 own reviews and comments, `GET /api/users/me`, password reset, listing a
@@ -43,6 +59,7 @@ user's reviews); see the [full docs](https://reviews.simpleapi.dev/docs).
 
 - Errors come back as `{"message": "..."}`; the app shows that text.
 - A bad or missing key answers `401`.
+- Running locally with a key: `flutter run -d chrome --dart-define=SIMPLEAPI_KEY=<your key>`, or just paste it under Settings.
 - Registering with the email address your key belongs to answers `202` and
   emails a confirmation code instead of returning a token
   (`POST /api/users/register/confirm`). The sample shows the message but does
@@ -73,7 +90,8 @@ lib/reviews_api.dart      the whole API client
 lib/models.dart           response classes
 lib/app_state.dart        saved key + logged-in user (a ChangeNotifier)
 lib/key_store*.dart       localStorage wrapper (+ in-memory one for tests)
-lib/screens/              the five screens
+lib/config.dart           the build-time key (SIMPLEAPI_KEY)
+lib/screens/              the screens
 test/                     unit tests for the client, widget tests for the app
 ```
 
@@ -83,6 +101,6 @@ test/                     unit tests for the client, widget tests for the app
 to `main`: it installs Flutter, runs `flutter analyze` and `flutter test`,
 builds with `flutter build web --release --base-href /reviews-client/` and
 publishes through the official `upload-pages-artifact` and `deploy-pages`
-actions. In your fork or copy, set **Settings -> Pages -> Source** to
+actions. In your fork or copy, add the `SIMPLEAPI_KEY` variable (see Keys) and set **Settings -> Pages -> Source** to
 **GitHub Actions**. If you rename the repository, change `--base-href` to
 match.

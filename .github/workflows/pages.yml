@@ -33,7 +33,12 @@ jobs:
       - run: flutter test
 
       # The site lives at https://simple-api-dev.github.io/reviews-client/
-      - run: flutter build web --release --base-href /reviews-client/
+      # The demo key comes from the SIMPLEAPI_KEY repository variable (Settings,
+      # Secrets and variables, Actions, Variables). It is compiled into the
+      # public JavaScript, so use a free demo key. Unset means "no key" mode.
+      - run: >
+          flutter build web --release --base-href /reviews-client/
+          --dart-define=SIMPLEAPI_KEY=${{ vars.SIMPLEAPI_KEY }}
 
       - uses: actions/upload-pages-artifact@v5.0.0
         with:

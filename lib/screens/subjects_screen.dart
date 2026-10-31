@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 
 import '../app_state.dart';
+import '../config.dart';
 import '../models.dart';
+import '../open_url.dart';
 import 'auth_screen.dart';
 import 'reviews_screen.dart';
+import 'settings_screen.dart';
 import 'ui.dart';
 
 /// Screen 2: browse subjects (things that have reviews).
 class SubjectsScreen extends StatefulWidget {
-  const SubjectsScreen({super.key, required this.state});
+  const SubjectsScreen({super.key, required this.state, required this.openUrl});
 
   final AppState state;
+  final UrlOpener openUrl;
 
   @override
   State<SubjectsScreen> createState() => _SubjectsScreenState();
@@ -23,7 +27,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
   @override
   void initState() {
     super.initState();
-    _future = _load();
+    _future = widget.state.hasKey ? _load() : Future.value(const []);
   }
 
   @override
@@ -74,7 +78,9 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
         appBar: AppBar(
           title: const Text('Subjects'),
           actions: [
-            if (state.loggedIn) ...[
+            if (!state.hasKey)
+              const SizedBox.shrink()
+            else if (state.loggedIn) ...[
               Center(child: Text('Hi, ${state.userName ?? 'you'}')),
               TextButton(onPressed: state.logout, child: const Text('Log out')),
             ] else
@@ -82,15 +88,24 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                 onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => AuthScreen(state: state))),
                 child: const Text('Log in / Register'),
               ),
-            TextButton(onPressed: state.forgetKey, child: const Text('Change key')),
+            TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => SettingsScreen(state: state, openUrl: widget.openUrl)),
+              ),
+              child: const Text('Settings'),
+            ),
           ],
         ),
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: _newSubject,
-          icon: const Icon(Icons.add),
-          label: const Text('Review something new'),
-        ),
-        body: Centered(
+        floatingActionButton: state.hasKey
+            ? FloatingActionButton.extended(
+                onPressed: _newSubject,
+                icon: const Icon(Icons.add),
+                label: const Text('Review something new'),
+              )
+            : null,
+        body: !state.hasKey
+            ? _NoKey(openUrl: widget.openUrl)
+            : Centered(
           child: Column(children: [
             Padding(
               padding: const EdgeInsets.all(12),
@@ -136,6 +151,30 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
             ),
           ]),
         ),
+      ),
+    );
+  }
+}
+
+/// Shown when the site was built without a demo key and the visitor has not
+/// saved their own.
+class _NoKey extends StatelessWidget {
+  const _NoKey({required this.openUrl});
+
+  final UrlOpener openUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('This demo has no key configured', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          const Text('Get a free SimpleApi key, then paste it under Settings to try the app.', textAlign: TextAlign.center),
+          const SizedBox(height: 12),
+          FilledButton(onPressed: () => openUrl(getKeyUrl), child: const Text('Get a free key')),
+        ]),
       ),
     );
   }
