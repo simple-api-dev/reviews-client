@@ -39,10 +39,17 @@ class AppState extends ChangeNotifier {
   ReviewsApi get api => _api!;
 
   void _useKey(String key, {required bool own}) {
-    _api = key.isEmpty ? null : ReviewsApi(apiKey: key, client: _client);
+    _api = key.isEmpty ? null : ReviewsApi(apiKey: key, client: _client, onSessionExpired: _sessionExpired);
     _usingOwnKey = own;
     userName = null;
     keyVersion++;
+  }
+
+  /// The API rejected our token (e.g. the user logged in elsewhere): the api
+  /// object already dropped it, so just update what the screens show.
+  void _sessionExpired() {
+    userName = null;
+    notifyListeners();
   }
 
   /// Checks [key] with one real call (GET /api/subjects), then remembers it in
