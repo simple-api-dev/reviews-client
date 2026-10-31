@@ -276,4 +276,101 @@ void main() {
     await logIn(); // token 2 works
     expect(find.text('Helpful 1'), findsOneWidget);
   });
+
+  testWidgets('posting a second review of a subject shows the 409 message inside the dialog', (tester) async {
+    await pumpApp(
+      tester,
+      store: MemoryKeyStore('k'),
+      server: (r) {
+        if (r.url.path == '/api/users/login') return json({'id': 1, 'name': 'Jane', 'token': 'tok'});
+        if (r.method == 'POST' && r.url.path == '/api/reviews') {
+          return json({'message': 'You already reviewed "blue-bike" (review 8). Use PUT /reviews/8 to change it.', 'review_id': 8}, 409);
+        }
+        if (r.url.path == '/api/reviews') return json(reviews);
+        return json(subjects);
+      },
+    );
+    await tester.tap(find.text('blue-bike'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Write a review'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, 'Email'), 'test-user');
+    await tester.enterText(find.widgetWithText(TextField, 'Password'), 'pw');
+    await tester.tap(find.widgetWithText(FilledButton, 'Log in'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Post'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('You already reviewed "blue-bike"'), findsOneWidget);
+    expect(find.text('Post'), findsOneWidget); // the dialog stays open
+  });
+
+  testWidgets('a wrong password (404 from the real API) is shown on the login screen', (tester) async {
+    await pumpApp(
+      tester,
+      store: MemoryKeyStore('k'),
+      server: (r) {
+        if (r.url.path == '/api/users/login') return json({'message': 'Login Failed (test-user)'}, 404);
+        if (r.url.path == '/api/reviews') return json(reviews);
+        return json(subjects);
+      },
+    );
+    await tester.tap(find.text('blue-bike'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Helpful 0'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, 'Email'), 'test-user');
+    await tester.enterText(find.widgetWithText(TextField, 'Password'), 'wrong');
+    await tester.tap(find.widgetWithText(FilledButton, 'Log in'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Login Failed (test-user)'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Log in'), findsOneWidget); // still on the login screen
+  });
+
+  testWidgets('a 429 while loading subjects is shown with a retry that works afterwards', (tester) async {
+    var throttled = true;
+    await pumpApp(
+      tester,
+      store: MemoryKeyStore('k'),
+      server: (r) {
+        if (throttled) return json({'message': 'Throttle Limit Exceeded'}, 429);
+        return json(subjects);
+      },
+    );
+    expect(find.text('Throttle Limit Exceeded'), findsOneWidget);
+    throttled = false;
+    await tester.tap(find.text('Try again'));
+    await tester.pumpAndSettle();
+    expect(find.text('blue-bike'), findsOneWidget);
+  });
+
+  testWidgets('voting on your own review (403) shows the API message and keeps the login', (tester) async {
+    final seen = await pumpApp(
+      tester,
+      store: MemoryKeyStore('k'),
+      server: (r) {
+        if (r.url.path == '/api/users/login') return json({'id': 1, 'name': 'Jane', 'token': 'tok'});
+        if (r.url.path == '/api/reviews/7/helpful') return json({'message': 'You cannot vote on your own review.'}, 403);
+        if (r.url.path == '/api/reviews') return json(reviews);
+        return json(subjects);
+      },
+    );
+    await tester.tap(find.text('blue-bike'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Helpful 0'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, 'Email'), 'test-user');
+    await tester.enterText(find.widgetWithText(TextField, 'Password'), 'pw');
+    await tester.tap(find.widgetWithText(FilledButton, 'Log in'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('You cannot vote on your own review.'), findsOneWidget);
+    // A 403 is not a lost session: the next tap goes straight to the API again.
+    seen.clear();
+    await tester.tap(find.text('Helpful 0'));
+    await tester.pumpAndSettle();
+    expect(seen.single.url.path, '/api/reviews/7/helpful');
+    expect(find.widgetWithText(FilledButton, 'Log in'), findsNothing);
+  });
 }
