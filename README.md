@@ -43,6 +43,7 @@ configured" with a link to get one.
 | **Subjects** (`subjects_screen.dart`) | The landing screen. Browse things that have reviews, with count and average; search by name prefix; start a review for a new subject. | `GET /api/subjects` |
 | **Settings** (`settings_screen.dart`) | Use your own key instead of the demo key (or go back to it). | `GET /api/subjects` (a one-item request used to check the key) |
 | **Log in / Register** (`auth_screen.dart`) | Get a token. Opened automatically when you try to write or vote. | `POST /api/users/register`, `POST /api/users/login`, `POST /api/users/logout` |
+| **Delete my account** (`delete_account_dialog.dart`) | Shown in the Subjects bar when logged in. Asks for your password; the checkbox "Also delete my reviews and comments" adds `purge=true`. | `DELETE /api/users/me` (password in the JSON body), `DELETE /api/users/me?purge=true` |
 | **Reviews** (`reviews_screen.dart`) | One subject: average, 1-5 star breakdown, sortable reviews, helpful / not helpful votes (click again to take a vote back), write a review. | `GET /api/reviews?subject=`, `POST /api/reviews`, `POST /api/reviews/{id}/helpful`, `POST /api/reviews/{id}/unhelpful`, `DELETE /api/reviews/{id}/vote` |
 | **Review** (`review_screen.dart`) | A review with its comments; add a comment. | `GET /api/reviews/{id}/comments`, `POST /api/reviews/{id}/comments` |
 
@@ -58,7 +59,16 @@ user's reviews); see the [full docs](https://reviews.simpleapi.dev/docs).
 ## Good to know
 
 - Errors come back as `{"message": "..."}`; the app shows that text.
-- A bad or missing key answers `401`.
+- A bad or missing key answers `401`. So does a wrong email or password on login
+  (`"Invalid email or password."`), which is not an expired session; an expired or
+  replaced token answers `401 "Invalid auth token. Log in again."`.
+- Register: `409` if the email is taken, `422` for invalid input, `400` for a
+  malformed JSON body. A new user answers `201` (the API used to answer `200`;
+  the sample accepts both).
+- `DELETE /api/users/me` needs your password in the JSON body (`403` if wrong,
+  `422` if missing). Without `purge=true` your reviews and comments stay,
+  attributed to your deleted user id; with it they are deleted and the vote
+  counters are recounted.
 - Running locally with a key: `flutter run -d chrome --dart-define=SIMPLEAPI_KEY=<your key>`, or just paste it under Settings.
 - Registering with the email address your key belongs to answers `202` and
   emails a confirmation code instead of returning a token

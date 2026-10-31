@@ -305,12 +305,12 @@ void main() {
     expect(find.text('Post'), findsOneWidget); // the dialog stays open
   });
 
-  testWidgets('a wrong password (404 from the real API) is shown on the login screen', (tester) async {
+  testWidgets('a wrong password (401 from the real API) is shown on the login screen', (tester) async {
     await pumpApp(
       tester,
       store: MemoryKeyStore('k'),
       server: (r) {
-        if (r.url.path == '/api/users/login') return json({'message': 'Login Failed (test-user)'}, 404);
+        if (r.url.path == '/api/users/login') return json({'message': 'Invalid email or password.'}, 401);
         if (r.url.path == '/api/reviews') return json(reviews);
         return json(subjects);
       },
@@ -324,7 +324,7 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Log in'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Login Failed (test-user)'), findsOneWidget);
+    expect(find.text('Invalid email or password.'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Log in'), findsOneWidget); // still on the login screen
   });
 
@@ -334,11 +334,11 @@ void main() {
       tester,
       store: MemoryKeyStore('k'),
       server: (r) {
-        if (throttled) return json({'message': 'Throttle Limit Exceeded'}, 429);
+        if (throttled) return json({'message': 'Too many requests: the limit is 20 per minute per IP address. Try again in 12 seconds.'}, 429);
         return json(subjects);
       },
     );
-    expect(find.text('Throttle Limit Exceeded'), findsOneWidget);
+    expect(find.text('Too many requests: the limit is 20 per minute per IP address. Try again in 12 seconds.'), findsOneWidget);
     throttled = false;
     await tester.tap(find.text('Try again'));
     await tester.pumpAndSettle();
@@ -372,5 +372,67 @@ void main() {
     await tester.pumpAndSettle();
     expect(seen.single.url.path, '/api/reviews/7/helpful');
     expect(find.widgetWithText(FilledButton, 'Log in'), findsNothing);
+  });
+
+  Future<List<http.Request>> pumpLoggedIn(WidgetTester tester, http.Response? Function(http.Request) extra) async {
+    final seen = await pumpApp(
+      tester,
+      store: MemoryKeyStore('k'),
+      server: (r) {
+        if (r.url.path == '/api/users/login') return json({'id': 1, 'name': 'Jane', 'token': 'tok'});
+        return extra(r) ?? json(subjects);
+      },
+    );
+    await tester.tap(find.text('Log in / Register'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, 'Email'), 'jane@example.com');
+    await tester.enterText(find.widgetWithText(TextField, 'Password'), 'pw');
+    await tester.tap(find.widgetWithText(FilledButton, 'Log in'));
+    await tester.pumpAndSettle();
+    return seen;
+  }
+
+  testWidgets('Delete my account: a wrong password (403) is shown and the user stays logged in', (tester) async {
+    final seen = await pumpLoggedIn(tester, (r) {
+      if (r.method == 'DELETE') return json({'message': 'Wrong password.'}, 403);
+      return null;
+    });
+    await tester.tap(find.text('Delete my account'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, 'Password'), 'wrong');
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete account'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Wrong password.'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Delete account'), findsOneWidget); // dialog still open
+    final del = seen.firstWhere((r) => r.method == 'DELETE');
+    expect(del.url.path, '/api/users/me');
+    expect(del.url.queryParameters.containsKey('purge'), isFalse);
+    expect(jsonDecode(del.body), {'password': 'wrong'});
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Log out'), findsOneWidget); // still logged in
+  });
+
+  testWidgets('Delete my account with "also delete my reviews and comments" sends purge=true and logs out', (tester) async {
+    final seen = await pumpLoggedIn(tester, (r) {
+      if (r.method == 'DELETE') return json({'message': 'Account deleted.', 'purged': {'reviews': 1, 'comments': 0, 'votes': 0}});
+      return null;
+    });
+    await tester.tap(find.text('Delete my account'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, 'Password'), 'pw');
+    await tester.tap(find.text('Also delete my reviews and comments'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete account'));
+    await tester.pumpAndSettle();
+
+    final del = seen.firstWhere((r) => r.method == 'DELETE');
+    expect(del.url.queryParameters['purge'], 'true');
+    expect(del.headers['Authorization'], 'Bearer tok');
+    expect(find.text('Your account was deleted.'), findsOneWidget);
+    expect(find.text('Log in / Register'), findsOneWidget); // logged out
+    expect(find.text('Delete my account'), findsNothing);
   });
 }

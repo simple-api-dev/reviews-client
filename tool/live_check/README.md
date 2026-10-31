@@ -29,15 +29,17 @@ Options:
 | `--burst-workers K` | send that burst from K threads at once |
 | `--only-burst` | skip the functional checks, only run the burst |
 
-A full run is about 130 checks and 150 to 220 requests, roughly 3 minutes at
-the default pace. Exit output ends with a PASS/FAIL count and the 429 events.
+A full run is about 157 checks and 175 requests, roughly 3 minutes at
+the default pace. It also exercises `DELETE /api/users/me` (right, wrong and missing
+password, `purge=true` with recounted votes) and checks that `X-RateLimit-Remaining` only
+goes down inside one `X-RateLimit-Reset` window. It never calls `POST /api/admin/purge`. Exit output ends with a PASS/FAIL count and the 429 events.
 
 ## What it does to the API
 
 It registers two throw-away users (`simpleapi-sample-apps+<random>@agentmail.to`;
 register returns a token directly, no inbox is read), creates reviews,
 comments and votes on a random `livecheck-<hex>` subject, and then deletes all
-of it, including both users (`DELETE /api/users/{id}`). A final check confirms
+of it, including every user it registered (`DELETE /api/users/me` with the user's password). A final check confirms
 no review or subject is left behind. If the run is interrupted, clean-up still
 runs from a `finally` block; if the process is killed, leftovers are only
 `livecheck-*` subjects and users with the email pattern above.

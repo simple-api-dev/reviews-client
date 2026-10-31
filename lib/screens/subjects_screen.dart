@@ -5,6 +5,7 @@ import '../config.dart';
 import '../models.dart';
 import '../open_url.dart';
 import 'auth_screen.dart';
+import 'delete_account_dialog.dart';
 import 'reviews_screen.dart';
 import 'settings_screen.dart';
 import 'ui.dart';
@@ -71,6 +72,17 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
     if (name != null && name.isNotEmpty && mounted) _open(name);
   }
 
+  Future<void> _deleteAccount() async {
+    final deleted = await showDialog<bool>(
+      context: context,
+      builder: (_) => DeleteAccountDialog(state: widget.state),
+    );
+    if (deleted == true && mounted) {
+      showSnack(context, 'Your account was deleted.');
+      _reload(); // with purge the counts changed
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = widget.state;
@@ -85,6 +97,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
             else if (state.loggedIn) ...[
               Center(child: Text('Hi, ${state.userName ?? 'you'}')),
               TextButton(onPressed: state.logout, child: const Text('Log out')),
+              TextButton(onPressed: _deleteAccount, child: const Text('Delete my account')),
             ] else
               TextButton(
                 onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => AuthScreen(state: state))),

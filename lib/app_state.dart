@@ -74,6 +74,15 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// DELETE /api/users/me. Throws [ApiException] (403 wrong password, 422
+  /// missing password) and leaves the user logged in; on success the user is
+  /// logged out.
+  Future<void> deleteAccount({required String password, bool purge = false}) async {
+    await api.deleteAccount(password: password, purge: purge);
+    userName = null;
+    notifyListeners();
+  }
+
   Future<void> logout() async {
     try {
       await api.logout();
