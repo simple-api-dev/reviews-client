@@ -48,7 +48,7 @@ class Api:
         self.last = 0.0
         self.calls = 0  # real HTTP requests, retries included
         self.rate_events: list[dict] = []
-        self.remaining_series: list[tuple[int, float, str]] = []
+        self.remaining_series: list[tuple[int, float, str, str | None]] = []
         self.limit_header: str | None = None
         self.t0 = time.time()
 
@@ -86,7 +86,7 @@ class Api:
             rem = hdrs.get("X-RateLimit-Remaining")
             if rem is not None:
                 self.limit_header = hdrs.get("X-RateLimit-Limit")
-                self.remaining_series.append((self.calls, round(time.time() - self.t0, 1), rem))
+                self.remaining_series.append((self.calls, round(time.time() - self.t0, 1), rem, hdrs.get("X-RateLimit-Reset")))
             if status == 429:
                 ra = hdrs.get("Retry-After")
                 delay = None
@@ -207,22 +207,28 @@ def run(api, u1, u2, reviews, subject, subject_b):
 
     # ------------------------------------------------------------- register
     s, b, _ = api.call("POST", "/api/users/register", body={"name": "Live One", "email": u1.email, "password": u1.password})
-    ok = s == 200 and isinstance(b, dict) and bool(b.get("token"))
-    check("register u1", "200 + token (docs: 200 'User created')", s, ok, "app also copes with 202", b)
+    ok = s in (200, 201) and isinstance(b, dict) and bool(b.get("token"))
+    check("register u1 (201 once reviews-api-private PR #2 is deployed)", "201 + token", s, s == 201 and ok, "live answered 200 before the deploy" if s == 200 else "", b)
     if ok:
         u1.set_token(b["token"]); u1.id = b.get("id")
     reg_token_u1 = u1.token
     s, b, _ = api.call("POST", "/api/users/register", body={"name": "Live Two", "email": u2.email, "password": u2.password})
-    ok = s == 200 and isinstance(b, dict) and bool(b.get("token"))
-    check("register u2", "200 + token", s, ok, "", b)
+    ok = s in (200, 201) and isinstance(b, dict) and bool(b.get("token"))
+    check("register u2", "200 or 201 + token", s, ok, "", b)
     if ok:
         u2.set_token(b["token"]); u2.id = b.get("id")
     s, b, _ = api.call("POST", "/api/users/register", body={"name": "Dup", "email": u1.email, "password": secrets.token_urlsafe(10)})
-    check("register duplicate email", "409 or 422 (docs list neither)", s, s in (409, 422), msg(b), b)
+    check("register duplicate email", "409", s, s == 409, msg(b), b)
     s, b, _ = api.call("POST", "/api/users/register", body={"name": "Dup", "email": u1.email.upper(), "password": secrets.token_urlsafe(10)})
-    check("register duplicate email, different case", "409/422 (same mailbox)", s, s in (400, 409, 422), msg(b), b)
+    check("register duplicate email, different case", "409 (same mailbox)", s, s == 409, msg(b), b)
     s, b, _ = api.call("POST", "/api/users/register", body={"name": "Bad", "email": "not-an-email", "password": secrets.token_urlsafe(10)})
     check("register bad email", "422 (docs: format email)", s, s == 422, msg(b), b)
+    ab = User("ab")
+    ab.email = f"ab{secrets.token_hex(4)}@b"
+    s, b, _ = api.call("POST", "/api/users/register", body={"name": "NoDot", "email": ab.email, "password": ab.password})
+    if s in (200, 201) and isinstance(b, dict) and b.get("token"):
+        ab.set_token(b["token"]); ab.id = b.get("id"); api_extra.append(ab)  # created by mistake: clean-up deletes it
+    check("register email without a dotted domain (a@b) - PR #2, not deployed yet", "422", s, s == 422, msg(b) if s == 422 else "accepted: user created (fixed by reviews-api-private PR #2)", b)
     s, b, _ = api.call("POST", "/api/users/register", body={"name": "Short", "email": f"simpleapi-sample-apps+{secrets.token_hex(5)}@agentmail.to", "password": "abc"})
     short_created = s == 200 and isinstance(b, dict) and b.get("token")
     check("register short password (3 chars)", "422 (docs give no minimum)", s, s == 422, msg(b) if not short_created else "ACCEPTED - user must be cleaned up", b)
@@ -251,14 +257,14 @@ def run(api, u1, u2, reviews, subject, subject_b):
     s, b = login(api, u1, email=u1.email.replace("simpleapi-sample-apps", "Simpleapi-Sample-Apps"))
     check("login with mixed-case local part", "200", s, s == 200, msg(b), b)
     s, b, _ = api.call("POST", "/api/users/login", body={"email": u1.email, "password": secrets.token_urlsafe(12)})
-    check("login wrong password", "404 (docs: 404 'Login failed')", s, s == 404, msg(b), b)
+    check("login wrong password", "401 Invalid email or password.", s, s == 401 and msg(b) == "Invalid email or password.", msg(b), b)
     wrong_pw_msg = msg(b)
     s, b, _ = api.call("POST", "/api/users/login", body={"email": f"nobody+{secrets.token_hex(5)}@agentmail.to", "password": "whatever-long-enough"})
-    check("login unknown email", "404 (same as wrong password, no user enumeration)", s, s == 404, msg(b), b)
+    check("login unknown email", "401, same message as a wrong password", s, s == 401 and msg(b) == wrong_pw_msg, msg(b), b)
     s, b, _ = api.call("POST", "/api/users/login", body={"email": u1.email})
     check("login missing password", "422", s, s == 422, msg(b), b)
     s, b, _ = api.call("POST", "/api/users/login", raw_body="{not json")
-    check("login malformed JSON", "4xx", s, 400 <= s < 500, msg(b), b)
+    check("login malformed JSON", "400", s, s == 400, msg(b), b)
     s, b, _ = api.call("GET", "/api/users/me")
     check("GET /users/me without a token", "401", s, s == 401, msg(b), b)
     s, b, _ = api.call("GET", "/api/users/me", token="definitely-not-a-token")
@@ -538,11 +544,113 @@ def run(api, u1, u2, reviews, subject, subject_b):
     s, b, _ = api.call("GET", "/api/users", token=u1.token)
     check("GET /users as non-admin", "403 (docs)", s, s == 403, msg(b), b)
 
+    delete_flows(api, u1, reviews)
+
     # ------------------------------------------------- rate limit snapshot
     print("   (rate-limit headers seen on every response are summarised at the end)")
 
 
 api_extra: list[User] = []
+
+def register_extra(api, label):
+    u = User(label)
+    s, b, _ = api.call("POST", "/api/users/register", body={"name": f"Live {label}", "email": u.email, "password": u.password})
+    if s in (200, 201) and isinstance(b, dict) and b.get("token"):
+        u.set_token(b["token"]); u.id = b.get("id")
+        api_extra.append(u)
+        return u
+    check(f"delete flows: register {label}", "200/201", s, False, msg(b), b)
+    return None
+
+
+def counters(api, rid):
+    s, b, _ = api.call("GET", f"/api/reviews/{rid}")
+    return (b.get("helpful_counter"), b.get("unhelpful_counter"), len(b.get("comments") or []), b.get("comment_count")) if s == 200 and isinstance(b, dict) else None
+
+
+def delete_flows(api, u1, reviews):
+    """DELETE /api/users/me with a right, wrong and missing password; purge=true with recounted votes.
+    Everything is deleted again: u3/u4 by the flows themselves, the review of u1 (and with it u3's comment and vote) at the end."""
+    print("\n--- delete flows ---", flush=True)
+    subj_a = f"livecheck-da-{secrets.token_hex(4)}"
+    subj_b = f"livecheck-db-{secrets.token_hex(4)}"
+    s, b = login(api, u1)
+    s, b, _ = api.call("POST", "/api/reviews", token=u1.token, body={"subject": subj_a, "rating": 4, "title": "delete flows"})
+    if s != 200 or not isinstance(b, dict):
+        check("delete flows: u1 review", "200", s, False, msg(b), b)
+        return
+    ra = b["id"]; reviews[ra] = u1
+    u3, u4 = register_extra(api, "u3"), register_extra(api, "u4")
+    if not (u3 and u4):
+        return
+
+    # u3 leaves a comment and a helpful vote on u1's review, then deletes the account WITHOUT purge
+    s, b, _ = api.call("POST", f"/api/reviews/{ra}/comments", token=u3.token, body={"body": "u3 comment"})
+    s, b, _ = api.call("POST", f"/api/reviews/{ra}/helpful", token=u3.token)
+    check("delete flows: u3 votes helpful on u1's review", "helpful=1", s, s == 200 and b.get("helpful_counter") == 1, "", b)
+
+    s, b, _ = api.call("DELETE", "/api/users/me")
+    check("DELETE /users/me without a token", "401", s, s == 401, msg(b), b)
+    s, b, _ = api.call("DELETE", "/api/users/me", token=u3.token)
+    check("DELETE /users/me with a MISSING password (no body)", "422", s, s == 422, msg(b), b)
+    s, b, _ = api.call("DELETE", "/api/users/me", token=u3.token, body={"password": ""})
+    check("DELETE /users/me with an EMPTY password", "422", s, s == 422, msg(b), b)
+    s, b, _ = api.call("DELETE", "/api/users/me", token=u3.token, query={"password": u3.password})
+    check("DELETE /users/me with the right password only in the URL", "422 (body only)", s, s == 422, msg(b), b)
+    s, b, _ = api.call("DELETE", "/api/users/me", token=u3.token, body={"password": secrets.token_urlsafe(12)})
+    check("DELETE /users/me with a WRONG password", "403", s, s == 403, msg(b), b)
+    s, b, _ = api.call("GET", "/api/users/me", token=u3.token)
+    check("account and token survive the refused deletes", "200", s, s == 200, msg(b) if s != 200 else "", None)
+    s, b, _ = api.call("DELETE", "/api/users/me", token=u3.token, body={"password": u3.password})
+    check("DELETE /users/me with the RIGHT password (no purge)", "200 {message}", s, s == 200 and "purged" not in (b or {}), msg(b), b)
+    if s == 200:
+        u3.deleted = True
+    s, b, _ = api.call("GET", "/api/users/me", token=u3.token)
+    check("deleted user's token answers 401", "401", s, s == 401, msg(b), None)
+    s, b = login(api, u3)
+    check("deleted user can no longer log in", "401", s, s == 401, msg(b), None)
+    s, b, _ = api.call("DELETE", "/api/users/me", token=u3.token, body={"password": u3.password})
+    check("DELETE /users/me twice", "401", s, s == 401, msg(b), None)
+    c = counters(api, ra)
+    check("no purge: u3's vote and comment stay on u1's review", "helpful=1, 1 comment, comment_count=1", 200, c == (1, 0, 1, 1), f"{c}", None)
+
+    # u4: review of its own, a comment and an unhelpful vote on u1's review; u1 comments on and votes on u4's review. Then purge.
+    s, b, _ = api.call("POST", "/api/reviews", token=u4.token, body={"subject": subj_b, "rating": 2, "title": "u4 review"})
+    r4 = b.get("id") if s == 200 and isinstance(b, dict) else None
+    check("delete flows: u4 writes a review", "200", s, r4 is not None, msg(b) if r4 is None else "", None)
+    if r4 is None:
+        return
+    reviews[r4] = u4
+    api.call("POST", f"/api/reviews/{ra}/comments", token=u4.token, body={"body": "u4 comment"})
+    s, b, _ = api.call("POST", f"/api/reviews/{ra}/unhelpful", token=u4.token)
+    check("delete flows: u4 votes unhelpful on u1's review", "unhelpful=1", s, s == 200 and b.get("unhelpful_counter") == 1, "", b)
+    api.call("POST", f"/api/reviews/{r4}/comments", token=u1.token, body={"body": "u1 comments on u4's review"})
+    s, b, _ = api.call("POST", f"/api/reviews/{r4}/helpful", token=u1.token)
+    c = counters(api, ra)
+    check("before purge: u1's review has helpful=1 (u3), unhelpful=1 (u4), 2 comments", "(1, 1, 2, 2)", 200, c == (1, 1, 2, 2), f"{c}", None)
+
+    s, b, _ = api.call("DELETE", "/api/users/me", token=u4.token, query={"purge": "true"}, body={"password": secrets.token_urlsafe(12)})
+    check("purge=true with a WRONG password deletes nothing", "403", s, s == 403, msg(b), b)
+    c = counters(api, ra)
+    check("...and nothing changed", "(1, 1, 2, 2)", 200, c == (1, 1, 2, 2), f"{c}", None)
+    s, b, _ = api.call("DELETE", "/api/users/me", token=u4.token, query={"purge": "true"}, body={"password": u4.password})
+    purged = (b or {}).get("purged") if isinstance(b, dict) else None
+    check("DELETE /users/me?purge=true with the RIGHT password", "200 + purged{reviews:1,comments:2,votes:2}", s,
+          s == 200 and purged == {"reviews": 1, "comments": 2, "votes": 2}, f"{json.dumps(b)}", None)
+    if s == 200:
+        u4.deleted = True
+        reviews.pop(r4, None)
+    s, b, _ = api.call("GET", f"/api/reviews/{r4}")
+    check("purge: u4's review is gone", "404", s, s == 404, msg(b), None)
+    c = counters(api, ra)
+    check("purge: unhelpful recounted to 0, u3's vote and comment stay", "(1, 0, 1, 1)", 200, c == (1, 0, 1, 1), f"{c}", None)
+    s, b, _ = api.call("GET", "/api/subjects", query={"q": "livecheck-db-"})
+    check("purge: u4's subject is gone from /subjects", "none", s, s == 200 and not [x for x in b.get("subjects", []) if subj_b in x["subject"]], "", None)
+    s, b, _ = api.call("DELETE", f"/api/reviews/{ra}", token=u1.token)
+    check("delete flows: clean-up of u1's review (takes u3's comment and vote with it)", "200", s, s == 200, msg(b), None)
+    if s == 200:
+        reviews.pop(ra, None)
+
 
 
 def burst(api, n, workers=1):
@@ -588,7 +696,7 @@ def cleanup(api, users, reviews, subject, subject_b):
     print("\n--- clean-up ---", flush=True)
     problems = []
     for u in users + api_extra:
-        if not u.password or not u.email:
+        if not u.password or not u.email or getattr(u, "deleted", False):
             continue
         s, b = login(api, u)
         if s != 200 and u.token is None:
@@ -607,12 +715,12 @@ def cleanup(api, users, reviews, subject, subject_b):
                     problems.append(f"review {rid}: {s}")
                 reviews.pop(rid, None)
         if uid is not None:
-            s, b, _ = api.call("DELETE", f"/api/users/{uid}", token=u.token)
+            s, b, _ = api.call("DELETE", "/api/users/me", token=u.token, body={"password": u.password})
             check(f"clean-up: delete user {u.label}", "200", s, s == 200, msg(b), b)
             if s != 200:
                 problems.append(f"user {u.label} id={uid} NOT deleted ({s})")
             s, b = login(api, u)
-            check(f"clean-up: deleted {u.label} can no longer log in", "404", s, s == 404, msg(b), None)
+            check(f"clean-up: deleted {u.label} can no longer log in", "401", s, s == 401, msg(b), None)
     s, b, _ = api.call("GET", "/api/reviews", query={"subject": subject})
     check("clean-up: no reviews left on test subject", "total 0", s, s == 200 and b.get("total") == 0, f"total={b.get('total') if isinstance(b, dict) else '?'}", None)
     s, b, _ = api.call("GET", "/api/subjects", query={"q": "livecheck-"})
@@ -630,8 +738,19 @@ def summary(api, out):
     if api.rate_events:
         for e in api.rate_events:
             print("  429:", json.dumps(e))
+    # X-RateLimit-Remaining must only go down inside one window (same X-RateLimit-Reset)
+    ups, windows = [], {}
+    for n, t, rem, reset in api.remaining_series:
+        windows.setdefault(reset, []).append((n, int(rem)))
+    for reset, series in windows.items():
+        for (n0, r0), (n1, r1) in zip(series, series[1:]):
+            if r1 > r0:
+                ups.append({"window_reset": reset, "call": n1, "from": r0, "to": r1})
+    print(f"rate-limit windows seen: {len(windows)}; Remaining went UP inside a window {len(ups)} time(s) {ups[:5]}")
+    check("X-RateLimit-Remaining only goes down within a window (same X-RateLimit-Reset)", "no increase inside a window", 200, not ups,
+          f"{len(api.remaining_series)} responses, {len(windows)} windows, increases: {ups[:5]}")
     data = {
-        "checks": RESULTS, "http_requests": api.calls, "seconds": round(time.time() - api.t0),
+        "checks": RESULTS, "remaining_increases_inside_window": ups, "http_requests": api.calls, "seconds": round(time.time() - api.t0),
         "rate_limit_header": api.limit_header, "rate_429_events": api.rate_events,
         "remaining_series": api.remaining_series,
     }
