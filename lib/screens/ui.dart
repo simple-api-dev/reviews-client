@@ -19,6 +19,17 @@ String describeError(Object e) {
   };
 }
 
+/// Who wrote something, for the screen. The API sends `author`, a name or null.
+String byAuthor(String? author) => 'by ${author ?? 'Unknown'}';
+
+/// A subject for reading: `blue-bike` shows as `Blue Bike`. The API only has the
+/// slug, and every call keeps using it. Text that is not a plain lowercase slug
+/// is shown as it was typed.
+String subjectName(String slug) {
+  if (!RegExp(r'^[a-z0-9]+([-_][a-z0-9]+)*$').hasMatch(slug)) return slug;
+  return slug.split(RegExp('[-_]')).map((word) => '${word[0].toUpperCase()}${word.substring(1)}').join(' ');
+}
+
 /// The leading item of a top-level app bar: back to the SimpleAPI home page, in the same tab.
 Widget backToSimpleApi(UrlOpener openUrl) => IconButton(
       icon: const Icon(Icons.arrow_back),
@@ -68,13 +79,14 @@ class Stars extends StatelessWidget {
 
 /// Centers page content in a readable column on wide screens.
 class Centered extends StatelessWidget {
-  const Centered({super.key, required this.child});
+  const Centered({super.key, required this.child, this.maxWidth = 720});
 
   final Widget child;
+  final double maxWidth;
 
   @override
   Widget build(BuildContext context) =>
-      Align(alignment: Alignment.topCenter, child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 720), child: child));
+      Align(alignment: Alignment.topCenter, child: ConstrainedBox(constraints: BoxConstraints(maxWidth: maxWidth), child: child));
 }
 
 /// Said on the login and register screens. Same wording in all the SimpleAPI demos.

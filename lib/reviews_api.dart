@@ -120,7 +120,7 @@ class ReviewsApi {
   /// goes in the JSON body (403 if wrong, 422 if missing). With [purge] the
   /// API also deletes your reviews, your comments, every comment on your
   /// reviews and all your votes (`?purge=true`); without it they stay,
-  /// attributed to your deleted user id. Either way all your sessions end.
+  /// shown under your name. Either way all your sessions end.
   Future<void> deleteAccount({required String password, bool purge = false}) async {
     await _send('DELETE', '/api/users/me', query: {if (purge) 'purge': 'true'}, body: {'password': password});
     token = null;

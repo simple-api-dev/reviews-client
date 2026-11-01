@@ -69,11 +69,36 @@ Future<List<http.Request>> pumpApp(
   return seen;
 }
 
+/// The login screen every SimpleAPI demo shares: same order, same widths, and no overflow at 360px.
+Future<void> expectSharedLoginLayout(WidgetTester tester) async {
+  final demo = find.widgetWithText(FilledButton, 'Try the demo account');
+  final logIn = find.widgetWithText(FilledButton, 'Log in');
+  final order = [
+    demo,
+    find.byType(Divider),
+    find.text(demoNoticeText),
+    find.widgetWithText(TextField, 'Email'),
+    find.widgetWithText(TextField, 'Password'),
+    logIn,
+  ];
+  final tops = [for (final item in order) tester.getTopLeft(item).dy];
+  expect(tops, [...tops]..sort());
+  expect(tester.getTopLeft(find.widgetWithText(TextButton, 'Create an account')).dy, greaterThanOrEqualTo(tops.last));
+
+  expect(tester.getSize(demo).width, 512); // 560 wide with 24 of padding
+  expect(tester.getSize(find.widgetWithText(TextField, 'Email')).width, 512);
+  expect(tester.getSize(logIn).width, lessThan(512));
+
+  tester.view.physicalSize = const Size(360, 800);
+  await tester.pump();
+  expect(tester.getSize(demo).width, 312);
+}
+
 void main() {
   testWidgets('opens straight on subjects using the build-time key', (tester) async {
     final seen = await pumpApp(tester, buildKey: 'build-key', server: (_) => json(subjects));
 
-    expect(find.text('blue-bike'), findsOneWidget);
+    expect(find.text('Blue Bike'), findsOneWidget);
     expect(find.text('2 reviews'), findsOneWidget);
         expect(seen.single.url.queryParameters['apikey'], 'build-key');
   });
@@ -93,12 +118,62 @@ void main() {
       server: (r) => r.url.path == '/api/reviews' ? json(reviews) : json(subjects),
     );
 
-    await tester.tap(find.text('blue-bike'));
+    await tester.tap(find.text('Blue Bike'));
     await tester.pumpAndSettle();
 
     expect(find.text('Loved it'), findsOneWidget);
     expect(find.text('5.0'), findsOneWidget);
     expect(seen.last.url.queryParameters['subject'], 'blue-bike');
+  });
+
+  testWidgets('subjects read as names, and calls keep the slug', (tester) async {
+    final seen = await pumpApp(tester, server: (r) => r.url.path == '/api/reviews' ? json(reviews) : json(subjects));
+    expect(find.text('blue-bike'), findsNothing);
+    await tester.tap(find.text('Blue Bike'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(AppBar, 'Blue Bike'), findsOneWidget);
+    expect(seen.last.url.queryParameters['subject'], 'blue-bike');
+
+    expect(subjectName('intro-to-python-course'), 'Intro To Python Course');
+    expect(subjectName('Blue Bike'), 'Blue Bike');
+    expect(subjectName('SKU-42'), 'SKU-42');
+  });
+
+  testWidgets('searching for a subject by the name it shows finds it', (tester) async {
+    final seen = await pumpApp(tester, server: (r) => json(subjects));
+    await tester.enterText(find.byType(TextField).first, 'Blue Bike');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+    expect(seen.last.url.queryParameters['q'], 'blue-bike');
+  });
+
+  testWidgets('a review or comment with no author says by Unknown', (tester) async {
+    final noAuthor = {
+      ...reviews,
+      'data': [
+        for (final r in reviews['data'] as List) {...r as Map, 'author': null},
+      ],
+    };
+    await pumpApp(tester, server: (r) {
+      if (r.url.path == '/api/reviews/7/comments') {
+        return json({
+          'data': [
+            {'id': 1, 'author': null, 'body': 'Thanks'},
+          ],
+          'total': 1,
+          'page': 1,
+          'per_page': 25,
+        });
+      }
+      return r.url.path == '/api/reviews' ? json(noAuthor) : json(subjects);
+    });
+    await tester.tap(find.text('Blue Bike'));
+    await tester.pumpAndSettle();
+    expect(find.text('by Unknown'), findsOneWidget);
+
+    await tester.tap(find.text('Loved it'));
+    await tester.pumpAndSettle();
+    expect(find.text('by Unknown'), findsNWidgets(2)); // the review and its comment
   });
 
   testWidgets('voting while logged out opens login, then votes after logging in', (tester) async {
@@ -117,7 +192,7 @@ void main() {
         }
       },
     );
-    await tester.tap(find.text('blue-bike'));
+    await tester.tap(find.text('Blue Bike'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Helpful 0'));
@@ -154,7 +229,7 @@ void main() {
         }
       },
     );
-    await tester.tap(find.text('blue-bike'));
+    await tester.tap(find.text('Blue Bike'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Helpful 0'));
     await tester.pumpAndSettle();
@@ -182,7 +257,7 @@ void main() {
         return json(subjects);
       },
     );
-    await tester.tap(find.text('blue-bike'));
+    await tester.tap(find.text('Blue Bike'));
     await tester.pumpAndSettle();
 
     // Writing needs a user: the login screen opens first, then the form.
@@ -224,7 +299,7 @@ void main() {
         }
       },
     );
-    await tester.tap(find.text('blue-bike'));
+    await tester.tap(find.text('Blue Bike'));
     await tester.pumpAndSettle();
 
     Future<void> logIn() async {
@@ -261,7 +336,7 @@ void main() {
         return json(subjects);
       },
     );
-    await tester.tap(find.text('blue-bike'));
+    await tester.tap(find.text('Blue Bike'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Write a review'));
     await tester.pumpAndSettle();
@@ -285,7 +360,7 @@ void main() {
         return json(subjects);
       },
     );
-    await tester.tap(find.text('blue-bike'));
+    await tester.tap(find.text('Blue Bike'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Helpful 0'));
     await tester.pumpAndSettle();
@@ -311,7 +386,7 @@ void main() {
     throttled = false;
     await tester.tap(find.text('Try again'));
     await tester.pumpAndSettle();
-    expect(find.text('blue-bike'), findsOneWidget);
+    expect(find.text('Blue Bike'), findsOneWidget);
   });
 
   testWidgets('voting on your own review (403) shows the API message and keeps the login', (tester) async {
@@ -324,7 +399,7 @@ void main() {
         return json(subjects);
       },
     );
-    await tester.tap(find.text('blue-bike'));
+    await tester.tap(find.text('Blue Bike'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Helpful 0'));
     await tester.pumpAndSettle();
@@ -455,6 +530,7 @@ void main() {
       expect(say(401, 'Invalid or expired auth token. Log in again.', sessionEnded: true), 'Your session has ended. Please log in again.');
       expect(say(401, 'Invalid email or password.'), 'Invalid email or password.');
       expect(say(403, 'Wrong password.'), 'Wrong password.');
+      expect(say(403, 'The demo account cannot be changed.'), 'The demo account cannot be changed.');
       expect(say(409, 'User registration failed, email already registered to this key.'), 'User registration failed, email already registered to this key.');
       expect(say(422, 'The email format is invalid.'), 'The email format is invalid.');
       expect(say(404, 'Review 9 not found.'), 'Not found. It may already have been deleted.');
@@ -477,6 +553,13 @@ void main() {
       expect(find.widgetWithText(FilledButton, 'Try the demo account'), findsOneWidget);
     });
 
+    testWidgets('the login form follows the shared login layout', (tester) async {
+      await pumpApp(tester, server: (_) => json(subjects));
+      await tester.tap(find.text('Log in'));
+      await tester.pumpAndSettle();
+      await expectSharedLoginLayout(tester);
+    });
+
     testWidgets('"Try the demo account" logs in as the demo user in one click, without the bearer token', (tester) async {
       final seen = await pumpApp(tester, server: (r) {
         if (r.url.path == '/api/users/login') return json(session('tok', 'Demo'));
@@ -496,7 +579,7 @@ void main() {
 
     testWidgets('voting while logged out opens a login screen that offers the demo account', (tester) async {
       await pumpApp(tester, server: (r) => json(r.url.path == '/api/reviews' ? reviews : subjects));
-      await tester.tap(find.text('blue-bike'));
+      await tester.tap(find.text('Blue Bike'));
       await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.thumb_up_outlined).first);
       await tester.pumpAndSettle();
@@ -512,7 +595,7 @@ void main() {
 
     testWidgets('inner screens keep the normal back arrow, not the home one', (tester) async {
       await pumpApp(tester, server: (r) => json(r.url.path == '/api/reviews' ? reviews : subjects));
-      await tester.tap(find.text('blue-bike'));
+      await tester.tap(find.text('Blue Bike'));
       await tester.pumpAndSettle();
       expect(find.byTooltip('Back to SimpleAPI'), findsNothing);
       expect(find.byType(BackButton), findsOneWidget);

@@ -39,7 +39,7 @@ The rest of the app never touches HTTP. The login token is held in memory only, 
 | --- | --- | --- |
 | **Subjects** (`subjects_screen.dart`) | The landing screen, with a back arrow to simpleapi.dev. Browse things that have reviews, with count and average; search by name prefix; start a review for a new subject. | `GET /api/subjects` |
 | **Log in / Register** (`auth_screen.dart`) | Get a token, or press **Try the demo account** to log in as the shared demo user. Opened automatically when you try to write or vote. | `POST /api/users/register`, `POST /api/users/login`, `POST /api/users/logout` |
-| **Delete my account** (`delete_account_dialog.dart`) | Shown in the Subjects bar when logged in. Asks for your password; the checkbox "Also delete my reviews and comments" adds `purge=true`. | `DELETE /api/users/me` (password in the JSON body), `DELETE /api/users/me?purge=true` |
+| **Delete my account** (`delete_account_dialog.dart`) | Shown in the Subjects bar when logged in, but not to the shared demo account: the API answers `403` `The demo account cannot be changed.` for it. Asks for your password; the checkbox "Also delete my reviews and comments" adds `purge=true`. | `DELETE /api/users/me` (password in the JSON body), `DELETE /api/users/me?purge=true` |
 | **Reviews** (`reviews_screen.dart`) | One subject: average, 1-5 star breakdown, sortable reviews, helpful / not helpful votes (click again to take a vote back), write a review. | `GET /api/reviews?subject=`, `POST /api/reviews`, `POST /api/reviews/{id}/helpful`, `POST /api/reviews/{id}/unhelpful`, `DELETE /api/reviews/{id}/vote` |
 | **Review** (`review_screen.dart`) | A review with its comments; add a comment. | `GET /api/reviews/{id}/comments`, `POST /api/reviews/{id}/comments` |
 
@@ -66,10 +66,12 @@ The live demo has a shared demo user, `demo@simpleapi.dev` with the password `tr
 - Register and login answer `{"token": "...", "expires_at": "...", "user": {...}}`. A token lasts 30 days, and a user can have 20 sessions, so logging in on a second device leaves the first one logged in. Logging out ends this session only.
 - Register: `201`, `409` if the email is taken, `422` for invalid input, `400` for a malformed JSON body, `403` when the key already has 25 users.
 - Registering with the email address your key belongs to answers `202` and emails a confirmation code instead of returning a token (`POST /api/users/register/confirm`). The sample shows the message but does not implement the confirmation step; use a different address to try it out.
-- `DELETE /api/users/me` needs your password in the JSON body (`403` if wrong, `422` if missing). Without `purge=true` your reviews and comments stay, attributed to your deleted user id; with it they are deleted and the vote counters are recounted.
+- `DELETE /api/users/me` needs your password in the JSON body (`403` if wrong, `422` if missing). Without `purge=true` your reviews and comments stay, under your name; with it they are deleted and the vote counters are recounted.
 - You get one review per user per subject; a second one answers `409`.
 - Writing a review or a comment answers `201` with the new object. Taking back a vote answers `{"message": "..."}`, so the app works out the new counters itself.
 - Timestamps are UTC, like `2026-11-01T03:47:06Z`.
+- `author` is the writer's name, or `null` if there is none. The app shows `by <author>`, or `by Unknown`.
+- A subject is any id or slug. The app shows a lowercase slug such as `pizza-palace` as `Pizza Palace`, and sends the stored text in every call.
 - The API allows 60 requests a minute per IP address and answers `429` beyond that.
 
 ## Project layout

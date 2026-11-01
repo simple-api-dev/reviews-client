@@ -78,7 +78,7 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.subject)),
+      appBar: AppBar(title: Text(subjectName(widget.subject))),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _write,
         icon: const Icon(Icons.rate_review),
@@ -200,7 +200,7 @@ class _ReviewTile extends StatelessWidget {
           padding: const EdgeInsets.all(12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [Stars(review.rating), const SizedBox(width: 8), Expanded(child: Text(review.title, style: const TextStyle(fontWeight: FontWeight.w600)))]),
-            Text('by ${review.author}', style: Theme.of(context).textTheme.bodySmall),
+            Text(byAuthor(review.author), style: Theme.of(context).textTheme.bodySmall),
             if (review.body.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6), child: Text(review.body)),
             Row(children: [
               TextButton.icon(
@@ -266,7 +266,7 @@ class _WriteReviewDialogState extends State<_WriteReviewDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text('Review ${widget.subject}'),
+      title: Text('Review ${subjectName(widget.subject)}'),
       content: SingleChildScrollView(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Row(children: [
