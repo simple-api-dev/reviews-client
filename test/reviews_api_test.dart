@@ -138,12 +138,12 @@ void main() {
   });
 
   test('non-2xx answers become an ApiException carrying the API message', () async {
-    final (api, _) = apiWith((_) => json({'message': 'Unauthorized.  Invalid apikey detected [x].'}, 401));
+    final (api, _) = apiWith((_) => json({'message': 'Unauthorized. Please provide a valid apikey. Get a free key at https://keys.simpleapi.dev/?product=reviews'}, 401));
     await expectLater(
       api.listSubjects(),
       throwsA(isA<ApiException>()
           .having((e) => e.statusCode, 'status', 401)
-          .having((e) => e.message, 'message', contains('Invalid apikey'))),
+          .having((e) => e.message, 'message', contains('valid apikey'))),
     );
   });
 
@@ -152,7 +152,6 @@ void main() {
     await expectLater(api.listSubjects(), throwsA(isA<ApiException>().having((e) => e.message, 'message', contains('500'))));
   });
 
-  // Real bodies captured from https://reviews.simpleapi.dev (tool/live_check).
   group('a 401 on a request that carried a token', () {
     test('drops the dead token and tells the app, keeping the API message', () async {
       var expired = 0;
@@ -169,7 +168,7 @@ void main() {
 
     test('a bad apikey is a different 401: the token is kept', () async {
       var expired = 0;
-      final client = MockClient((_) async => json({'message': 'Unauthorized.  Invalid apikey detected [x]. Register for a free apikey at https://keys.simpleapi.dev'}, 401));
+      final client = MockClient((_) async => json({'message': 'Unauthorized. Please provide a valid apikey. Get a free key at https://keys.simpleapi.dev/?product=reviews'}, 401));
       final api = ReviewsApi(apiKey: fakeKey, token: 'good', client: client, onSessionExpired: () => expired++);
 
       await expectLater(api.listSubjects(), throwsA(isA<ApiException>()));
@@ -187,8 +186,7 @@ void main() {
     });
   });
 
-  // Status codes and bodies exactly as https://reviews.simpleapi.dev answered
-  // them in tool/live_check/REPORT.md. Every error is {"message": "..."}.
+  // Status codes and bodies as the API answers them. Every error is {"message": "..."}.
   group('real error answers', () {
     Future<ApiException> fails(int status, Object? body, Future<void> Function(ReviewsApi) call, {String? token}) async {
       final (api, _) = apiWith((_) => body is String ? http.Response(body, status) : json(body!, status), token: token);
@@ -295,10 +293,9 @@ void main() {
     });
 
     test('429 throttling, with or without a JSON body, is readable and does not drop the login', () async {
-      // The message is the one reported by an earlier manual run; the 429 could not
-      // be provoked again (see REPORT.md), so a body-less 429 is covered too.
-      final e = await fails(429, {'message': 'Throttle Limit Exceeded'}, (a) => a.listSubjects(), token: 'keep-me');
-      expect(e.message, 'Throttle Limit Exceeded');
+      // A body-less 429 is covered too.
+      final e = await fails(429, {'message': 'Rate limit exceeded: 60 requests per minute.  Please try again in 30 seconds.'}, (a) => a.listSubjects(), token: 'keep-me');
+      expect(e.message, 'Rate limit exceeded: 60 requests per minute.  Please try again in 30 seconds.');
       final (api, _) = apiWith((_) => http.Response('', 429, headers: {'retry-after': '30'}), token: 'keep-me');
       await expectLater(api.listSubjects(), throwsA(isA<ApiException>().having((x) => x.message, 'message', contains('429'))));
       expect(api.token, 'keep-me');
@@ -311,7 +308,7 @@ void main() {
     expect(api.token, isNull);
   });
 
-  test('register 200 body of the real API: user fields plus token', () async {
+  test('register answers with: user fields plus token', () async {
     final (api, _) = apiWith((_) => json({'name': 'Jane', 'email': 'jane@example.com', 'enabled': true, 'token': 'tok', 'admin': false, 'id': 9}));
     final result = await api.register(name: 'Jane', email: 'jane@example.com', password: 'longenough');
     expect(result.token, 'tok');
@@ -335,17 +332,15 @@ void main() {
     expect((await api.vote(4, helpful: true)).yourVote, 'helpful');
   });
 
-  group('register accepts 200 (old deployment) and 201', () {
-    for (final status in [200, 201]) {
-      test('$status with a token logs the new user in', () async {
-        final (api, seen) = apiWith((_) => json({'id': 3, 'name': 'Jane', 'email': 'j@x.co', 'admin': false, 'token': 'tok-$status'}, status));
-        final result = await api.register(name: 'Jane', email: 'j@x.co', password: 'longenough');
-        expect(result.token, 'tok-$status');
-        expect(api.token, 'tok-$status');
-        expect(seen.single.method, 'POST');
-        expect(seen.single.url.path, '/api/users/register');
-      });
-    }
+  group('register', () {
+    test('201 with a token logs the new user in', () async {
+      final (api, seen) = apiWith((_) => json({'id': 3, 'name': 'Jane', 'email': 'j@x.co', 'admin': false, 'token': 'tok-201'}, 201));
+      final result = await api.register(name: 'Jane', email: 'j@x.co', password: 'longenough');
+      expect(result.token, 'tok-201');
+      expect(api.token, 'tok-201');
+      expect(seen.single.method, 'POST');
+      expect(seen.single.url.path, '/api/users/register');
+    });
 
     test('202 (the key owner\'s email) returns the message and no token', () async {
       final (api, _) = apiWith((_) => json({'message': 'We sent a 6 digit code.', 'confirmation_required': true}, 202));
@@ -423,6 +418,56 @@ void main() {
       await expectLater(api.deleteAccount(password: 'pw'), throwsA(isA<ApiException>()));
       expect(expired, 1);
       expect(api.token, isNull);
+    });
+  });
+
+  group('errors the user sees', () {
+    test('a network failure names the host and never leaks the exception', () async {
+      final api = ReviewsApi(apiKey: fakeKey, client: MockClient((_) async => throw http.ClientException('XMLHttpRequest error. secret detail')));
+      await expectLater(
+        api.listSubjects(),
+        throwsA(isA<ApiException>()
+            .having((e) => e.statusCode, 'status', 0)
+            .having((e) => e.message, 'message', 'Could not reach reviews.simpleapi.dev. Check your connection and try again.')),
+      );
+    });
+
+    test('a 401 with a token is a session that ended, not a rejected key', () async {
+      final api = ReviewsApi(apiKey: fakeKey, token: 'old', client: MockClient((_) async => json({'message': 'Invalid auth token. Log in again.'}, 401)));
+      await expectLater(api.addComment(1, 'x'), throwsA(isA<ApiException>().having((e) => e.sessionEnded, 'sessionEnded', true).having((e) => e.keyRejected, 'keyRejected', false)));
+    });
+
+    test('a 401 about the apikey is a rejected key, even while logged in', () async {
+      final api = ReviewsApi(apiKey: fakeKey, token: 'good', client: MockClient((_) async => json({'message': 'Unauthorized. Please provide a valid apikey. Get a free key at https://keys.simpleapi.dev/?product=reviews'}, 401)));
+      await expectLater(api.addComment(1, 'x'), throwsA(isA<ApiException>().having((e) => e.keyRejected, 'keyRejected', true).having((e) => e.sessionEnded, 'sessionEnded', false)));
+    });
+
+    test('a wrong password on login is neither of those, and no Bearer token is sent', () async {
+      final seen = <http.Request>[];
+      final api = ReviewsApi(
+        apiKey: fakeKey,
+        token: 'stale',
+        client: MockClient((r) async {
+          seen.add(r);
+          return json({'message': 'Invalid email or password.'}, 401);
+        }),
+      );
+      await expectLater(
+        api.login(email: 'a@b.co', password: 'nope-nope'),
+        throwsA(isA<ApiException>().having((e) => e.sessionEnded, 'sessionEnded', false).having((e) => e.keyRejected, 'keyRejected', false)),
+      );
+      expect(seen.single.headers.containsKey('Authorization'), isFalse);
+      expect(api.token, 'stale');
+    });
+
+    test('register never sends the Bearer token either', () async {
+      final seen = <http.Request>[];
+      final api = ReviewsApi(apiKey: fakeKey, token: 'stale', client: MockClient((r) async {
+        seen.add(r);
+        return json({'message': 'x'}, 409);
+      }));
+      await expectLater(api.register(name: 'J', email: 'a@b.co', password: 'longenough'), throwsA(isA<ApiException>()));
+      expect(seen.single.headers.containsKey('Authorization'), isFalse);
     });
   });
 }

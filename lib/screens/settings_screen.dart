@@ -3,9 +3,10 @@ import 'package:flutter/material.dart';
 import '../app_state.dart';
 import '../config.dart';
 import '../open_url.dart';
+import '../reviews_api.dart' show apiHost;
 import 'ui.dart';
 
-/// Settings: use your own SimpleApi key instead of the demo's. It is checked
+/// Settings: use your own SimpleAPI key instead of the demo's. It is checked
 /// with one real call (GET /api/subjects) and then kept only in this
 /// browser's localStorage.
 class SettingsScreen extends StatefulWidget {
@@ -52,7 +53,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final current = state.usingOwnKey
         ? 'You are using your own key.'
         : state.hasBuildKey
-        ? 'You are using the demo key this site was built with.'
+        ? 'You are using the shared demo key.'
         : 'No key is configured.';
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -66,7 +67,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              '$current Your key is stored only in this browser (localStorage) and sent only to reviews.simpleapi.dev.',
+              '$current Your key is stored only in this browser (localStorage) and sent only to $apiHost.',
             ),
             const SizedBox(height: 8),
             TextButton(
@@ -97,11 +98,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       state.useBuildKey();
                       Navigator.of(context).pop();
                     },
-                    child: Text(
-                      state.hasBuildKey
-                          ? 'Go back to the demo key'
-                          : 'Forget my key',
-                    ),
+                    child: const Text('Remove my key'),
                   ),
               ],
             ),

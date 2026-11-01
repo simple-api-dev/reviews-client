@@ -15,23 +15,34 @@ import 'package:http/http.dart' as http;
 import 'models.dart';
 
 /// Thrown for any non-2xx answer. [message] is the API's own `message` when it
-/// sent one, e.g. "Unauthorized.  Invalid apikey detected [...]".
+/// sent one, e.g. "Invalid email or password.". [statusCode] is 0 when the API
+/// could not be reached at all.
 class ApiException implements Exception {
-  ApiException(this.statusCode, this.message);
+  ApiException(this.statusCode, this.message, {this.sessionEnded = false});
 
   final int statusCode;
   final String message;
 
+  /// True for a 401 on a call that carried a Bearer token: the token is dead
+  /// (the user logged in elsewhere, logged out or was deleted).
+  final bool sessionEnded;
+
+  /// True for a 401 about the apikey itself.
+  bool get keyRejected => statusCode == 401 && !sessionEnded && message.toLowerCase().contains('apikey');
+
   @override
   String toString() => message;
 }
+
+/// The API host. Keys are sent only here.
+const apiHost = 'reviews.simpleapi.dev';
 
 class ReviewsApi {
   ReviewsApi({
     required this.apiKey,
     this.token,
     http.Client? client,
-    this.host = 'reviews.simpleapi.dev',
+    this.host = apiHost,
     this.onSessionExpired,
   }) : _http = client ?? http.Client();
 
@@ -84,10 +95,9 @@ class ReviewsApi {
   // ------------------------------------------------------------------ users
 
   /// POST /api/users/register - create a user that belongs to this key.
-  /// Answers 201 with a token (older deployments answered 200, so any 2xx with
-  /// a token is accepted), or 202 (no token) when the email is the one the key
-  /// belongs to and a confirmation code was emailed instead. Errors: 409 the
-  /// email is taken, 422 invalid input.
+  /// Answers 201 with a token, or 202 (no token) when the email is the one the
+  /// key belongs to and a confirmation code was emailed instead. Errors: 403
+  /// the key already has its 25 users, 409 the email is taken, 422 invalid input.
   Future<AuthResult> register({required String name, required String email, required String password}) async {
     final json = await _send('POST', '/api/users/register', body: {'name': name, 'email': email, 'password': password}, authenticated: false);
     return _authResult(json);
@@ -190,7 +200,7 @@ class ReviewsApi {
     try {
       response = await http.Response.fromStream(await _http.send(request));
     } catch (e) {
-      throw ApiException(0, 'Could not reach $host ($e)');
+      throw ApiException(0, 'Could not reach $host. Check your connection and try again.');
     }
 
     Object? decoded;
@@ -206,11 +216,12 @@ class ReviewsApi {
       final message = _errorMessage(response.statusCode, decoded);
       // 401 with a token sent = the session is over ("Invalid auth token. Log
       // in again."). A 401 about the apikey is a different problem: keep the token.
-      if (response.statusCode == 401 && request.headers.containsKey('Authorization') && !message.toLowerCase().contains('apikey')) {
+      final sessionEnded = response.statusCode == 401 && request.headers.containsKey('Authorization') && !message.toLowerCase().contains('apikey');
+      if (sessionEnded) {
         token = null;
         onSessionExpired?.call();
       }
-      throw ApiException(response.statusCode, message);
+      throw ApiException(response.statusCode, message, sessionEnded: sessionEnded);
     }
     if (decoded is List) return {'_list': decoded};
     if (decoded is Map<String, dynamic>) return decoded;

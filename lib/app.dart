@@ -13,8 +13,8 @@ class ReviewsApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'SimpleApi Reviews sample',
-      theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
+      title: 'SimpleAPI Reviews sample',
+      theme: ThemeData(colorSchemeSeed: const Color(0xFF0066CC), useMaterial3: true),
       // The app opens straight on content. A new keyVersion rebuilds the list
       // so it reloads when the key changes.
       home: ListenableBuilder(
