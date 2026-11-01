@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:reviews_client/models.dart';
 import 'package:reviews_client/reviews_api.dart';
 
 // A made-up value: the tests never touch the real API or a real key.
@@ -21,9 +22,16 @@ const fakeKey = 'test-key';
 http.Response json(Object body, [int status = 200]) =>
     http.Response(jsonEncode(body), status, headers: {'content-type': 'application/json'});
 
+/// What register and login answer.
+Map<String, Object> session(String token, String name) => {
+      'token': token,
+      'expires_at': '2026-11-30T10:15:00Z',
+      'user': {'id': 1, 'name': name, 'email': 'jane@example.com', 'admin': false, 'enabled': true, 'created_at': '2026-10-31T10:15:00Z', 'updated_at': '2026-10-31T10:15:00Z'},
+    };
+
 void main() {
   test('sends the key as the apikey query parameter, not as a header', () async {
-    final (api, seen) = apiWith((_) => json({'subjects': []}));
+    final (api, seen) = apiWith((_) => json({'data': [], 'total': 0, 'page': 1, 'per_page': 25}));
     await api.listSubjects(q: 'bi');
 
     final r = seen.single;
@@ -38,9 +46,12 @@ void main() {
 
   test('parses subjects', () async {
     final (api, _) = apiWith((_) => json({
-          'subjects': [
+          'data': [
             {'subject': 'blue-bike', 'count': 3, 'average': 4.5},
           ],
+          'total': 1,
+          'page': 1,
+          'per_page': 25,
         }));
     final subjects = await api.listSubjects();
     expect(subjects.single.name, 'blue-bike');
@@ -55,10 +66,12 @@ void main() {
             'average': 4.0,
             'distribution': {'1': 0, '2': 0, '3': 0, '4': 2, '5': 0},
           },
-          'total': 2,
-          'reviews': [
-            {'id': 7, 'subject': 'blue-bike', 'author': 'Ann', 'rating': 4, 'title': 'Nice', 'body': 'Good', 'helpful_counter': 2, 'unhelpful_counter': 1, 'comment_count': 3},
+          'data': [
+            {'id': 7, 'subject': 'blue-bike', 'author': 'Ann', 'rating': 4, 'title': 'Nice', 'body': 'Good', 'helpful_counter': 2, 'unhelpful_counter': 1, 'comment_count': 3, 'reviewed_at': '2026-10-31T10:15:00Z'},
           ],
+          'total': 2,
+          'page': 1,
+          'per_page': 25,
         }));
     final page = await api.listReviews(subject: 'blue-bike', sort: 'helpful');
 
@@ -69,25 +82,43 @@ void main() {
     expect(page.reviews.single.id, 7);
     expect(page.reviews.single.helpful, 2);
     expect(page.reviews.single.commentCount, 3);
+    expect(page.reviews.single.reviewedAt, '2026-10-31T10:15:00Z');
+    expect(page.total, 2);
   });
 
-  test('parses a comments array', () async {
-    final (api, seen) = apiWith((_) => json([
-          {'id': 1, 'review_id': 7, 'author': 'Bob', 'body': 'Thanks'},
-        ]));
+  test('parses a comments list and asks for as many as a page holds', () async {
+    final (api, seen) = apiWith((_) => json({
+          'data': [
+            {'id': 1, 'review_id': 7, 'author': 'Bob', 'body': 'Thanks'},
+          ],
+          'total': 1,
+          'page': 1,
+          'per_page': 100,
+        }));
     final comments = await api.listComments(7);
     expect(seen.single.url.path, '/api/reviews/7/comments');
+    expect(seen.single.url.queryParameters['per_page'], '100');
     expect(comments.single.body, 'Thanks');
+  });
+
+  test('reading never sends the token, so an ended session cannot get in its way', () async {
+    final (api, seen) = apiWith((r) => json({'data': [], 'total': 0, 'page': 1, 'per_page': 25}), token: 'tok');
+    await api.listSubjects();
+    await api.listReviews(subject: 'x');
+    await api.listComments(7);
+    expect(seen.map((r) => r.headers.containsKey('Authorization')), [false, false, false]);
+    expect(api.token, 'tok');
   });
 
   test('login stores the token and later calls send it as a Bearer header', () async {
     final (api, seen) = apiWith((r) {
-      if (r.url.path == '/api/users/login') return json({'id': 1, 'name': 'Jane', 'token': 'tok-1'});
-      return json({'id': 9, 'subject': 'x', 'rating': 5});
+      if (r.url.path == '/api/users/login') return json(session('tok-1', 'Jane'));
+      return json({'id': 9, 'subject': 'x', 'rating': 5}, 201);
     });
     final result = await api.login(email: 'test-user', password: 'pw');
     expect(result.token, 'tok-1');
     expect(result.name, 'Jane');
+    expect(result.expiresAt, '2026-11-30T10:15:00Z');
     expect(jsonDecode(seen.first.body), {'email': 'test-user', 'password': 'pw'});
     expect(seen.first.headers['Authorization'], isNull);
 
@@ -110,7 +141,8 @@ void main() {
 
   test('vote, change of mind and comment hit the right endpoints', () async {
     final (api, seen) = apiWith((r) {
-      if (r.url.path.endsWith('/comments')) return json({'id': 1, 'body': 'hi', 'author': 'Jane'});
+      if (r.url.path.endsWith('/comments')) return json({'id': 1, 'body': 'hi', 'author': 'Jane'}, 201);
+      if (r.method == 'DELETE') return json({'message': 'Vote removed.'});
       return json({'helpful_counter': 1, 'unhelpful_counter': 0, 'your_vote': 'helpful'});
     }, token: 'tok');
 
@@ -130,8 +162,16 @@ void main() {
     expect(jsonDecode(seen.last.body), {'body': 'hi'});
   });
 
+  test('taking a vote back works out the new counters', () {
+    const voted = VoteResult(helpful: 3, unhelpful: 1, yourVote: 'unhelpful');
+    final after = voted.withoutVote();
+    expect(after.helpful, 3);
+    expect(after.unhelpful, 0);
+    expect(after.yourVote, isNull);
+  });
+
   test('logout clears the token', () async {
-    final (api, seen) = apiWith((_) => json({}), token: 'tok');
+    final (api, seen) = apiWith((_) => json({'message': 'Logged out.'}), token: 'tok');
     await api.logout();
     expect(seen.single.url.path, '/api/users/logout');
     expect(api.token, isNull);
@@ -155,12 +195,12 @@ void main() {
   group('a 401 on a request that carried a token', () {
     test('drops the dead token and tells the app, keeping the API message', () async {
       var expired = 0;
-      final client = MockClient((_) async => json({'message': 'Invalid auth token. Log in again.'}, 401));
+      final client = MockClient((_) async => json({'message': 'Invalid or expired auth token. Log in again.'}, 401));
       final api = ReviewsApi(apiKey: fakeKey, token: 'old', client: client, onSessionExpired: () => expired++);
 
       await expectLater(
         api.createReview(subject: 'x', rating: 5),
-        throwsA(isA<ApiException>().having((e) => e.statusCode, 'status', 401).having((e) => e.message, 'message', 'Invalid auth token. Log in again.')),
+        throwsA(isA<ApiException>().having((e) => e.statusCode, 'status', 401).having((e) => e.message, 'message', 'Invalid or expired auth token. Log in again.')),
       );
       expect(api.token, isNull);
       expect(expired, 1);
@@ -302,14 +342,8 @@ void main() {
     });
   });
 
-  test('logout copes with the bare JSON `true` the API answers with', () async {
-    final (api, _) = apiWith((_) => http.Response('true', 200, headers: {'content-type': 'application/json'}), token: 'tok');
-    await api.logout();
-    expect(api.token, isNull);
-  });
-
-  test('register answers with: user fields plus token', () async {
-    final (api, _) = apiWith((_) => json({'name': 'Jane', 'email': 'jane@example.com', 'enabled': true, 'token': 'tok', 'admin': false, 'id': 9}));
+  test('register answers token, expires_at and user', () async {
+    final (api, _) = apiWith((_) => json(session('tok', 'Jane'), 201));
     final result = await api.register(name: 'Jane', email: 'jane@example.com', password: 'longenough');
     expect(result.token, 'tok');
     expect(result.name, 'Jane');
@@ -323,8 +357,8 @@ void main() {
       return json({
         'id': 4, 'subject': 'blue-bike', 'user_id': 10, 'tags': ['livecheck'], 'rating': 4, 'title': 'T', 'body': 'B',
         'bad': false, 'spam': false, 'helpful_counter': 0, 'unhelpful_counter': 0, 'author': 'Live One', 'meta': null,
-        'reviewed_at': '2026-10-31T10:00:00.000000Z',
-      });
+        'reviewed_at': '2026-10-31T10:00:00Z', 'created_at': '2026-10-31T10:00:00Z', 'updated_at': '2026-10-31T10:00:00Z',
+      }, 201);
     }, token: 't');
     final review = await api.createReview(subject: 'blue-bike', rating: 4, title: 'T', body: 'B');
     expect(review.id, 4);
@@ -334,7 +368,7 @@ void main() {
 
   group('register', () {
     test('201 with a token logs the new user in', () async {
-      final (api, seen) = apiWith((_) => json({'id': 3, 'name': 'Jane', 'email': 'j@x.co', 'admin': false, 'token': 'tok-201'}, 201));
+      final (api, seen) = apiWith((_) => json(session('tok-201', 'Jane'), 201));
       final result = await api.register(name: 'Jane', email: 'j@x.co', password: 'longenough');
       expect(result.token, 'tok-201');
       expect(api.token, 'tok-201');
@@ -353,7 +387,7 @@ void main() {
 
   test('comment_count is read from a single-review response', () async {
     final (api, _) = apiWith(
-      (_) => json({'id': 9, 'subject': 's', 'author': 'Ann', 'rating': 4, 'helpful_counter': 0, 'unhelpful_counter': 0, 'comment_count': 3}),
+      (_) => json({'id': 9, 'subject': 's', 'author': 'Ann', 'rating': 4, 'helpful_counter': 0, 'unhelpful_counter': 0, 'comment_count': 3}, 201),
       token: 'tok',
     );
     final review = await api.createReview(subject: 's', rating: 4);
@@ -377,10 +411,7 @@ void main() {
     });
 
     test('purge adds ?purge=true', () async {
-      final (api, seen) = apiWith(
-        (_) => json({'message': 'Account deleted.', 'purged': {'reviews': 1, 'comments': 2, 'votes': 3}}),
-        token: 'tok',
-      );
+      final (api, seen) = apiWith((_) => json({'message': 'Account deleted.'}), token: 'tok');
       await api.deleteAccount(password: 'secret-pw', purge: true);
       expect(seen.single.url.queryParameters['purge'], 'true');
       expect(jsonDecode(seen.single.body), {'password': 'secret-pw'});
@@ -412,7 +443,7 @@ void main() {
       final api = ReviewsApi(
         apiKey: fakeKey,
         token: 'old',
-        client: MockClient((_) async => json({'message': 'Invalid auth token. Log in again.'}, 401)),
+        client: MockClient((_) async => json({'message': 'Invalid or expired auth token. Log in again.'}, 401)),
         onSessionExpired: () => expired++,
       );
       await expectLater(api.deleteAccount(password: 'pw'), throwsA(isA<ApiException>()));
@@ -433,7 +464,7 @@ void main() {
     });
 
     test('a 401 with a token is a session that ended, not a rejected key', () async {
-      final api = ReviewsApi(apiKey: fakeKey, token: 'old', client: MockClient((_) async => json({'message': 'Invalid auth token. Log in again.'}, 401)));
+      final api = ReviewsApi(apiKey: fakeKey, token: 'old', client: MockClient((_) async => json({'message': 'Invalid or expired auth token. Log in again.'}, 401)));
       await expectLater(api.addComment(1, 'x'), throwsA(isA<ApiException>().having((e) => e.sessionEnded, 'sessionEnded', true).having((e) => e.keyRejected, 'keyRejected', false)));
     });
 

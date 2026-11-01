@@ -6,6 +6,8 @@
 ///  * the developer key goes in the `apikey` QUERY parameter (never a header);
 ///  * calls that write data also send `Authorization: Bearer <token>`, where
 ///    the token comes from [ReviewsApi.register] / [ReviewsApi.login].
+///
+/// Every list answers `{data, total, page, per_page}`.
 library;
 
 import 'dart:convert';
@@ -24,7 +26,7 @@ class ApiException implements Exception {
   final String message;
 
   /// True for a 401 on a call that carried a Bearer token: the token is dead
-  /// (the user logged in elsewhere, logged out or was deleted).
+  /// (it expired, the user logged out everywhere, or was deleted).
   final bool sessionEnded;
 
   /// True for a 401 about the apikey itself.
@@ -52,8 +54,8 @@ class ReviewsApi {
   /// Set after [login] / [register]; sent as the Bearer token.
   String? token;
 
-  /// Called after the API rejected our Bearer token (401). The API keeps one
-  /// active session per user, so logging in elsewhere makes this token invalid.
+  /// Called after the API rejected our Bearer token (401): a token lasts 30
+  /// days and a user can have 20 sessions, so it can end while the app is open.
   /// The token is dropped first, so the next write asks for a login again.
   final void Function()? onSessionExpired;
 
@@ -63,39 +65,42 @@ class ReviewsApi {
 
   /// GET /api/subjects - subjects that have reviews, with count and average.
   /// [sort]: most_reviewed (default), best, worst or name. [q]: name prefix.
-  Future<List<Subject>> listSubjects({String? q, String? sort, int page = 1, int perPage = 20}) async {
+  Future<List<Subject>> listSubjects({String? q, String? sort, int page = 1, int perPage = 25}) async {
     final json = await _send('GET', '/api/subjects', query: {
       if (q != null && q.isNotEmpty) 'q': q,
       'sort': ?sort,
       'page': '$page',
       'per_page': '$perPage',
-    });
-    return [for (final s in (json['subjects'] as List? ?? const [])) Subject.fromJson(s as Map<String, dynamic>)];
+    }, authenticated: false);
+    return [for (final s in (json['data'] as List? ?? const [])) Subject.fromJson(s as Map<String, dynamic>)];
   }
 
   /// GET /api/reviews?subject=... - reviews plus the average rating and the
   /// 1-5 star breakdown. [sort]: newest (default), oldest, rating_desc,
   /// rating_asc or helpful.
-  Future<ReviewPage> listReviews({String? subject, String? sort, int page = 1, int perPage = 20}) async {
+  Future<ReviewPage> listReviews({String? subject, String? sort, int page = 1, int perPage = 25}) async {
     final json = await _send('GET', '/api/reviews', query: {
       'subject': ?subject,
       'sort': ?sort,
       'page': '$page',
       'per_page': '$perPage',
-    });
+    }, authenticated: false);
     return ReviewPage.fromJson(json);
   }
 
   /// GET /api/reviews/{id}/comments - comments on one review, oldest first.
-  Future<List<Comment>> listComments(int reviewId) async {
-    final json = await _send('GET', '/api/reviews/$reviewId/comments');
-    return [for (final c in (json['_list'] as List)) Comment.fromJson(c as Map<String, dynamic>)];
+  Future<List<Comment>> listComments(int reviewId, {int page = 1, int perPage = 100}) async {
+    final json = await _send('GET', '/api/reviews/$reviewId/comments', query: {
+      'page': '$page',
+      'per_page': '$perPage',
+    }, authenticated: false);
+    return [for (final c in (json['data'] as List? ?? const [])) Comment.fromJson(c as Map<String, dynamic>)];
   }
 
   // ------------------------------------------------------------------ users
 
   /// POST /api/users/register - create a user that belongs to this key.
-  /// Answers 201 with a token, or 202 (no token) when the email is the one the
+  /// Answers 201 with `{token, expires_at, user}`, or 202 (no token) when the email is the one the
   /// key belongs to and a confirmation code was emailed instead. Errors: 403
   /// the key already has its 25 users, 409 the email is taken, 422 invalid input.
   Future<AuthResult> register({required String name, required String email, required String password}) async {
@@ -103,7 +108,7 @@ class ReviewsApi {
     return _authResult(json);
   }
 
-  /// POST /api/users/login - returns the user and a token. A wrong email or
+  /// POST /api/users/login - answers `{token, expires_at, user}`. A wrong email or
   /// password is a 401 "Invalid email or password." - not an expired session,
   /// so it never touches the token the app may be holding.
   Future<AuthResult> login({required String email, required String password}) async {
@@ -115,25 +120,23 @@ class ReviewsApi {
   /// goes in the JSON body (403 if wrong, 422 if missing). With [purge] the
   /// API also deletes your reviews, your comments, every comment on your
   /// reviews and all your votes (`?purge=true`); without it they stay,
-  /// attributed to your deleted user id. Either way the token stops working.
+  /// attributed to your deleted user id. Either way all your sessions end.
   Future<void> deleteAccount({required String password, bool purge = false}) async {
     await _send('DELETE', '/api/users/me', query: {if (purge) 'purge': 'true'}, body: {'password': password});
     token = null;
   }
 
-  /// POST /api/users/logout - invalidates the current token.
+  /// POST /api/users/logout - ends this session. Your other sessions keep
+  /// working; `?all=true` would end them too.
   Future<void> logout() async {
     await _send('POST', '/api/users/logout');
     token = null;
   }
 
   AuthResult _authResult(Map<String, dynamic> json) {
-    final t = json['token'];
-    if (t is String && t.isNotEmpty) {
-      token = t;
-      return AuthResult(token: t, name: '${json['name'] ?? ''}');
-    }
-    return AuthResult(message: '${json['message'] ?? 'Confirmation required.'}');
+    final result = AuthResult.fromJson(json);
+    if (result.token != null) token = result.token;
+    return result;
   }
 
   // ---------------------------------------------------------------- writing
@@ -168,18 +171,18 @@ class ReviewsApi {
     return VoteResult.fromJson(json);
   }
 
-  /// DELETE /api/reviews/{id}/vote - take back your vote.
-  Future<VoteResult> removeVote(int reviewId) async {
-    final json = await _send('DELETE', '/api/reviews/$reviewId/vote');
-    return VoteResult.fromJson(json);
+  /// DELETE /api/reviews/{id}/vote - take back your vote. Answers a message,
+  /// not the counters.
+  Future<void> removeVote(int reviewId) async {
+    await _send('DELETE', '/api/reviews/$reviewId/vote');
   }
 
   // ---------------------------------------------------------------- plumbing
 
-  /// Sends one request and returns the decoded JSON. A JSON array is wrapped
-  /// as `{'_list': [...]}` so every caller gets a Map. Login and register pass
-  /// `authenticated: false`: they need only the key, and their 401/409/422
-  /// answers are about the credentials, not about a session.
+  /// Sends one request and returns the decoded JSON object. Login, register
+  /// and reading pass `authenticated: false`: they need only the key. A 401
+  /// from login is about the credentials, not about a session, and a token
+  /// that has ended must not get in the way of reading.
   Future<Map<String, dynamic>> _send(
     String method,
     String path, {
@@ -223,7 +226,6 @@ class ReviewsApi {
       }
       throw ApiException(response.statusCode, message, sessionEnded: sessionEnded);
     }
-    if (decoded is List) return {'_list': decoded};
     if (decoded is Map<String, dynamic>) return decoded;
     return {};
   }

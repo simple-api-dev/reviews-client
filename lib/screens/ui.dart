@@ -14,6 +14,7 @@ String describeError(Object e) {
   return switch (e.statusCode) {
     404 => 'Not found. It may already have been deleted.',
     429 => 'Too many requests. Wait a few seconds and try again.',
+    503 => 'The service is busy. Please try again shortly.',
     _ => e.message, // 401 login, 403, 409, 422 and the rest: the API's own message
   };
 }

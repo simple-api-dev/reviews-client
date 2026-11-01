@@ -50,13 +50,16 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
   Future<void> _vote(Review r, {required bool helpful}) async {
     if (!await ensureLoggedIn(context, widget.state)) return;
     try {
-      final current = _votes[r.id]?.yourVote;
+      final current = _votes[r.id];
       final want = helpful ? 'helpful' : 'unhelpful';
       // Clicking your current vote again takes it back.
-      final result = current == want
-          ? await widget.state.api.removeVote(r.id) // DELETE /api/reviews/{id}/vote
-          : await widget.state.api.vote(r.id, helpful: helpful); // POST /api/reviews/{id}/helpful|unhelpful
-      setState(() => _votes[r.id] = current == want ? VoteResult(helpful: result.helpful, unhelpful: result.unhelpful) : result);
+      if (current != null && current.yourVote == want) {
+        await widget.state.api.removeVote(r.id); // DELETE /api/reviews/{id}/vote
+        setState(() => _votes[r.id] = current.withoutVote());
+        return;
+      }
+      final result = await widget.state.api.vote(r.id, helpful: helpful); // POST /api/reviews/{id}/helpful|unhelpful
+      setState(() => _votes[r.id] = result);
     } catch (e) {
       if (mounted) showSnack(context, describeError(e));
     }

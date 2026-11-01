@@ -14,10 +14,20 @@ http.Response json(Object body, [int status = 200]) =>
     http.Response(jsonEncode(body), status, headers: {'content-type': 'application/json'});
 
 const subjects = {
-  'subjects': [
+  'data': [
     {'subject': 'blue-bike', 'count': 2, 'average': 4.5},
   ],
+  'total': 1,
+  'page': 1,
+  'per_page': 25,
 };
+
+/// What register and login answer.
+Map<String, Object> session(String token, String name) => {
+      'token': token,
+      'expires_at': '2026-11-30T10:15:00Z',
+      'user': {'id': 1, 'name': name, 'email': 'test-user@example.com', 'admin': false, 'enabled': true, 'created_at': '2026-10-31T10:15:00Z', 'updated_at': '2026-10-31T10:15:00Z'},
+    };
 
 const reviews = {
   'summary': {
@@ -25,10 +35,12 @@ const reviews = {
     'average': 5.0,
     'distribution': {'1': 0, '2': 0, '3': 0, '4': 0, '5': 1},
   },
-  'total': 1,
-  'reviews': [
+  'data': [
     {'id': 7, 'subject': 'blue-bike', 'author': 'Ann', 'rating': 5, 'title': 'Loved it', 'body': 'Smooth ride', 'helpful_counter': 0, 'unhelpful_counter': 0, 'comment_count': 0},
   ],
+  'total': 1,
+  'page': 1,
+  'per_page': 25,
 };
 
 /// Links the app asked to open.
@@ -97,7 +109,7 @@ void main() {
           case '/api/reviews':
             return json(reviews);
           case '/api/users/login':
-            return json({'id': 1, 'name': 'Jane', 'token': 'tok'});
+            return json(session('tok', 'Jane'));
           case '/api/reviews/7/helpful':
             return json({'helpful_counter': 1, 'unhelpful_counter': 0, 'your_vote': 'helpful'});
           default:
@@ -124,12 +136,48 @@ void main() {
     expect(vote.headers['Authorization'], 'Bearer tok');
   });
 
+  testWidgets('clicking your vote again takes it back and the counter drops', (tester) async {
+    final seen = await pumpApp(
+      tester,
+      server: (r) {
+        switch (r.url.path) {
+          case '/api/reviews':
+            return json(reviews);
+          case '/api/users/login':
+            return json(session('tok', 'Jane'));
+          case '/api/reviews/7/helpful':
+            return json({'helpful_counter': 1, 'unhelpful_counter': 0, 'your_vote': 'helpful'});
+          case '/api/reviews/7/vote':
+            return json({'message': 'Vote removed.'});
+          default:
+            return json(subjects);
+        }
+      },
+    );
+    await tester.tap(find.text('blue-bike'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Helpful 0'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, 'Email'), 'test-user');
+    await tester.enterText(find.widgetWithText(TextField, 'Password'), 'pw');
+    await tester.tap(find.widgetWithText(FilledButton, 'Log in'));
+    await tester.pumpAndSettle();
+    expect(find.text('Helpful 1'), findsOneWidget);
+
+    await tester.tap(find.text('Helpful 1'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Helpful 0'), findsOneWidget);
+    expect(seen.last.method, 'DELETE');
+    expect(seen.last.url.path, '/api/reviews/7/vote');
+  });
+
   testWidgets('posting a review sends rating, title and body', (tester) async {
     final seen = await pumpApp(
       tester,
       server: (r) {
-        if (r.url.path == '/api/users/login') return json({'name': 'Jane', 'token': 'tok'});
-        if (r.method == 'POST' && r.url.path == '/api/reviews') return json({'id': 8, 'subject': 'blue-bike', 'rating': 4});
+        if (r.url.path == '/api/users/login') return json(session('tok', 'Jane'));
+        if (r.method == 'POST' && r.url.path == '/api/reviews') return json({'id': 8, 'subject': 'blue-bike', 'rating': 4}, 201);
         if (r.url.path == '/api/reviews') return json(reviews);
         return json(subjects);
       },
@@ -165,11 +213,11 @@ void main() {
             return json(reviews);
           case '/api/users/login':
             logins++;
-            return json({'id': 1, 'name': 'Jane', 'token': 'tok-$logins'});
+            return json(session('tok-$logins', 'Jane'));
           case '/api/reviews/7/helpful':
-            // Real answer once the same user has logged in somewhere else.
+            // Real answer once that session has ended.
             return r.headers['Authorization'] == 'Bearer tok-1'
-                ? json({'message': 'Invalid auth token. Log in again.'}, 401)
+                ? json({'message': 'Invalid or expired auth token. Log in again.'}, 401)
                 : json({'helpful_counter': 1, 'unhelpful_counter': 0, 'your_vote': 'helpful'});
           default:
             return json(subjects);
@@ -205,7 +253,7 @@ void main() {
     await pumpApp(
       tester,
       server: (r) {
-        if (r.url.path == '/api/users/login') return json({'id': 1, 'name': 'Jane', 'token': 'tok'});
+        if (r.url.path == '/api/users/login') return json(session('tok', 'Jane'));
         if (r.method == 'POST' && r.url.path == '/api/reviews') {
           return json({'message': 'You already reviewed "blue-bike" (review 8). Use PUT /reviews/8 to change it.', 'review_id': 8}, 409);
         }
@@ -270,7 +318,7 @@ void main() {
     final seen = await pumpApp(
       tester,
       server: (r) {
-        if (r.url.path == '/api/users/login') return json({'id': 1, 'name': 'Jane', 'token': 'tok'});
+        if (r.url.path == '/api/users/login') return json(session('tok', 'Jane'));
         if (r.url.path == '/api/reviews/7/helpful') return json({'message': 'You cannot vote on your own review.'}, 403);
         if (r.url.path == '/api/reviews') return json(reviews);
         return json(subjects);
@@ -303,7 +351,7 @@ void main() {
     final seen = await pumpApp(
       tester,
       server: (r) {
-        if (r.url.path == '/api/users/login') return json({'id': 1, 'name': 'Jane', 'token': 'tok'});
+        if (r.url.path == '/api/users/login') return json(session('tok', 'Jane'));
         return extra(r) ?? json(subjects);
       },
     );
@@ -321,7 +369,7 @@ void main() {
       await pumpApp(
         tester,
         server: (r) {
-          if (r.url.path == '/api/users/login') return json({'id': 1, 'name': 'Demo User', 'token': 'tok'});
+          if (r.url.path == '/api/users/login') return json(session('tok', 'Demo User'));
           return json(subjects);
         },
       );
@@ -378,7 +426,7 @@ void main() {
 
   testWidgets('Delete my account with "also delete my reviews and comments" sends purge=true and logs out', (tester) async {
     final seen = await pumpLoggedIn(tester, (r) {
-      if (r.method == 'DELETE') return json({'message': 'Account deleted.', 'purged': {'reviews': 1, 'comments': 0, 'votes': 0}});
+      if (r.method == 'DELETE') return json({'message': 'Account deleted.'});
       return null;
     });
     await openMenu(tester);
@@ -404,13 +452,14 @@ void main() {
     test('describeError', () {
       expect(say(0, 'Could not reach reviews.simpleapi.dev. Check your connection and try again.'), 'Could not reach reviews.simpleapi.dev. Check your connection and try again.');
       expect(say(401, 'Unauthorized. Please provide a valid apikey. Get a free key at https://keys.simpleapi.dev/?product=reviews'), 'The API key was not accepted.');
-      expect(say(401, 'Invalid auth token. Log in again.', sessionEnded: true), 'Your session has ended. Please log in again.');
+      expect(say(401, 'Invalid or expired auth token. Log in again.', sessionEnded: true), 'Your session has ended. Please log in again.');
       expect(say(401, 'Invalid email or password.'), 'Invalid email or password.');
       expect(say(403, 'Wrong password.'), 'Wrong password.');
       expect(say(409, 'User registration failed, email already registered to this key.'), 'User registration failed, email already registered to this key.');
       expect(say(422, 'The email format is invalid.'), 'The email format is invalid.');
       expect(say(404, 'Review 9 not found.'), 'Not found. It may already have been deleted.');
       expect(say(429, 'Rate limit exceeded: 60 requests per minute.  Please try again in 5 seconds.'), 'Too many requests. Wait a few seconds and try again.');
+      expect(say(503, 'Key service unavailable. Please try again shortly.'), 'The service is busy. Please try again shortly.');
       expect(describeError(StateError('boom')), 'Something went wrong. Please try again.');
     });
 
@@ -430,7 +479,7 @@ void main() {
 
     testWidgets('"Try the demo account" logs in as the demo user in one click, without the bearer token', (tester) async {
       final seen = await pumpApp(tester, server: (r) {
-        if (r.url.path == '/api/users/login') return json({'id': 1, 'name': 'Demo', 'token': 'tok'});
+        if (r.url.path == '/api/users/login') return json(session('tok', 'Demo'));
         return json(subjects);
       });
       await tester.tap(find.text('Log in'));
@@ -503,7 +552,7 @@ void main() {
     });
 
     testWidgets('an empty subject list is padded, not flush against the edge', (tester) async {
-      await pumpApp(tester, server: (_) => json({'subjects': []}));
+      await pumpApp(tester, server: (_) => json({'data': [], 'total': 0, 'page': 1, 'per_page': 25}));
       final padding = find.ancestor(of: find.textContaining('No subjects yet'), matching: find.byType(Padding));
       expect(padding, findsWidgets);
     });

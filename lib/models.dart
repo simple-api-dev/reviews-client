@@ -117,7 +117,7 @@ class ReviewPage {
 
   factory ReviewPage.fromJson(Map<String, dynamic> j) => ReviewPage(
         summary: ReviewSummary.fromJson(j['summary'] as Map<String, dynamic>?),
-        reviews: [for (final r in (j['reviews'] as List? ?? const [])) Review.fromJson(r as Map<String, dynamic>)],
+        reviews: [for (final r in (j['data'] as List? ?? const [])) Review.fromJson(r as Map<String, dynamic>)],
         total: _int(j['total']),
       );
 
@@ -126,17 +126,32 @@ class ReviewPage {
   final int total;
 }
 
-/// Result of register / login. [token] is null when the server answered 202
-/// ("a confirmation code was emailed"); [message] then explains why.
+/// Result of register / login: `{token, expires_at, user}`. [token] is null
+/// when the server answered 202 ("a confirmation code was emailed"); [message]
+/// then explains why.
 class AuthResult {
-  const AuthResult({this.token, this.name = '', this.message = ''});
+  const AuthResult({this.token, this.expiresAt = '', this.name = '', this.message = ''});
+
+  factory AuthResult.fromJson(Map<String, dynamic> j) {
+    final token = j['token'];
+    if (token is! String || token.isEmpty) {
+      return AuthResult(message: j['message'] is String ? j['message'] as String : 'Confirmation required.');
+    }
+    final user = j['user'];
+    return AuthResult(
+      token: token,
+      expiresAt: _str(j['expires_at']),
+      name: user is Map ? _str(user['name']) : '',
+    );
+  }
 
   final String? token;
+  final String expiresAt;
   final String name;
   final String message;
 }
 
-/// The counters returned by the vote endpoints.
+/// The counters returned by voting.
 class VoteResult {
   const VoteResult({required this.helpful, required this.unhelpful, this.yourVote});
 
@@ -151,4 +166,11 @@ class VoteResult {
 
   /// "helpful", "unhelpful" or null.
   final String? yourVote;
+
+  /// The counters once your vote is taken back. The API answers that call with
+  /// a message only.
+  VoteResult withoutVote() => VoteResult(
+        helpful: helpful - (yourVote == 'helpful' ? 1 : 0),
+        unhelpful: unhelpful - (yourVote == 'unhelpful' ? 1 : 0),
+      );
 }
