@@ -13,18 +13,13 @@ class ReviewsApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'SimpleAPI Reviews sample',
-      theme: ThemeData(colorSchemeSeed: const Color(0xFF0066CC), useMaterial3: true),
-      // The app opens straight on content. A new keyVersion rebuilds the list
-      // so it reloads when the key changes.
-      home: ListenableBuilder(
-        listenable: state,
-        builder: (context, _) => SubjectsScreen(
-          key: ValueKey(state.keyVersion),
-          state: state,
-          openUrl: openUrl,
-        ),
+      title: 'SimpleAPI Reviews',
+      theme: ThemeData(
+        colorSchemeSeed: const Color(0xFF0066CC),
+        useMaterial3: true,
       ),
+      // The app opens straight on content.
+      home: SubjectsScreen(state: state, openUrl: openUrl),
     );
   }
 }

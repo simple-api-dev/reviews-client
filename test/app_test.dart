@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:reviews_client/app.dart';
 import 'package:reviews_client/app_state.dart';
-import 'package:reviews_client/key_store.dart';
+import 'package:reviews_client/config.dart';
 import 'package:reviews_client/reviews_api.dart';
 import 'package:reviews_client/screens/ui.dart';
 
@@ -38,11 +38,11 @@ final opened = <String>[];
 /// [buildKey] stands in for the key passed with --dart-define at build time.
 Future<List<http.Request>> pumpApp(
   WidgetTester tester, {
-  KeyStore? store,
-  String buildKey = '',
+  String buildKey = 'demo-key',
+  Size size = const Size(1000, 1600),
   required http.Response Function(http.Request) server,
 }) async {
-  tester.view.physicalSize = const Size(1000, 1600);
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   opened.clear();
@@ -51,15 +51,10 @@ Future<List<http.Request>> pumpApp(
     seen.add(r);
     return server(r);
   });
-  final state = AppState(store: store ?? MemoryKeyStore(), buildKey: buildKey, client: client);
+  final state = AppState(apiKey: buildKey, client: client);
   await tester.pumpWidget(ReviewsApp(state: state, openUrl: opened.add));
   await tester.pumpAndSettle();
   return seen;
-}
-
-Future<void> openSettings(WidgetTester tester) async {
-  await tester.tap(find.text('Settings'));
-  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -68,81 +63,12 @@ void main() {
 
     expect(find.text('blue-bike'), findsOneWidget);
     expect(find.text('2 reviews'), findsOneWidget);
-    expect(find.text('This demo has no key configured'), findsNothing);
-    expect(seen.single.url.queryParameters['apikey'], 'build-key');
-  });
-
-  testWidgets('without any key it explains so, links to get one, and calls nothing', (tester) async {
-    final seen = await pumpApp(tester, server: (_) => json(subjects));
-
-    expect(find.text('This demo has no key configured'), findsOneWidget);
-    expect(seen, isEmpty);
-
-    await tester.tap(find.text('Get a free key'));
-    expect(opened, ['https://keys.simpleapi.dev/?product=reviews']);
-  });
-
-  testWidgets('a key saved in this browser overrides the build key', (tester) async {
-    final seen = await pumpApp(
-      tester,
-      store: MemoryKeyStore('own-key'),
-      buildKey: 'build-key',
-      server: (_) => json(subjects),
-    );
-    expect(seen.single.url.queryParameters['apikey'], 'own-key');
-  });
-
-  testWidgets('"Use your own key" validates it, saves it and reloads with it', (tester) async {
-    final store = MemoryKeyStore();
-    final seen = await pumpApp(tester, store: store, buildKey: 'build-key', server: (_) => json(subjects));
-
-    await openSettings(tester);
-    await tester.enterText(find.byType(TextField), '  pasted-key ');
-    await tester.tap(find.text('Save key'));
-    await tester.pumpAndSettle();
-
-    expect(seen.map((r) => r.url.queryParameters['apikey']), ['build-key', 'pasted-key', 'pasted-key']);
-    expect(store.read(), 'pasted-key');
-    expect(find.text('blue-bike'), findsOneWidget);
-  });
-
-  testWidgets('a rejected own key is not saved and the API message is shown', (tester) async {
-    final store = MemoryKeyStore();
-    await pumpApp(
-      tester,
-      store: store,
-      buildKey: 'build-key',
-      server: (r) => r.url.queryParameters['apikey'] == 'nope'
-          ? json({'message': 'Unauthorized. Please provide a valid apikey. Get a free key at https://keys.simpleapi.dev/?product=reviews'}, 401)
-          : json(subjects),
-    );
-    await openSettings(tester);
-    await tester.enterText(find.byType(TextField), 'nope');
-    await tester.tap(find.text('Save key'));
-    await tester.pumpAndSettle();
-
-    expect(store.read(), isNull);
-    expect(find.text('The API key was not accepted. Check it under Settings.'), findsOneWidget);
-    expect(find.text('Settings'), findsWidgets);
-  });
-
-  testWidgets('"Remove my key" forgets the saved key', (tester) async {
-    final store = MemoryKeyStore('own-key');
-    final seen = await pumpApp(tester, store: store, buildKey: 'build-key', server: (_) => json(subjects));
-
-    await openSettings(tester);
-    await tester.tap(find.text('Remove my key'));
-    await tester.pumpAndSettle();
-
-    expect(store.read(), isNull);
-    expect(seen.last.url.queryParameters['apikey'], 'build-key');
-    expect(find.text('blue-bike'), findsOneWidget);
+        expect(seen.single.url.queryParameters['apikey'], 'build-key');
   });
 
   testWidgets('an API error is shown with a retry button', (tester) async {
     await pumpApp(
       tester,
-      store: MemoryKeyStore('bad'),
       server: (_) => json({'message': 'Unauthorized. Please provide a valid apikey. Get a free key at https://keys.simpleapi.dev/?product=reviews'}, 401),
     );
     expect(find.text('The API key was not accepted. Check it under Settings.'), findsOneWidget);
@@ -152,7 +78,6 @@ void main() {
   testWidgets('opens a subject and shows the summary and its reviews', (tester) async {
     final seen = await pumpApp(
       tester,
-      store: MemoryKeyStore('k'),
       server: (r) => r.url.path == '/api/reviews' ? json(reviews) : json(subjects),
     );
 
@@ -167,7 +92,6 @@ void main() {
   testWidgets('voting while logged out opens login, then votes after logging in', (tester) async {
     final seen = await pumpApp(
       tester,
-      store: MemoryKeyStore('k'),
       server: (r) {
         switch (r.url.path) {
           case '/api/reviews':
@@ -203,7 +127,6 @@ void main() {
   testWidgets('posting a review sends rating, title and body', (tester) async {
     final seen = await pumpApp(
       tester,
-      store: MemoryKeyStore('k'),
       server: (r) {
         if (r.url.path == '/api/users/login') return json({'name': 'Jane', 'token': 'tok'});
         if (r.method == 'POST' && r.url.path == '/api/reviews') return json({'id': 8, 'subject': 'blue-bike', 'rating': 4});
@@ -236,7 +159,6 @@ void main() {
     var logins = 0;
     await pumpApp(
       tester,
-      store: MemoryKeyStore('k'),
       server: (r) {
         switch (r.url.path) {
           case '/api/reviews':
@@ -282,7 +204,6 @@ void main() {
   testWidgets('posting a second review of a subject shows the 409 message inside the dialog', (tester) async {
     await pumpApp(
       tester,
-      store: MemoryKeyStore('k'),
       server: (r) {
         if (r.url.path == '/api/users/login') return json({'id': 1, 'name': 'Jane', 'token': 'tok'});
         if (r.method == 'POST' && r.url.path == '/api/reviews') {
@@ -310,7 +231,6 @@ void main() {
   testWidgets('a wrong password (401 from the real API) is shown on the login screen', (tester) async {
     await pumpApp(
       tester,
-      store: MemoryKeyStore('k'),
       server: (r) {
         if (r.url.path == '/api/users/login') return json({'message': 'Invalid email or password.'}, 401);
         if (r.url.path == '/api/reviews') return json(reviews);
@@ -334,7 +254,6 @@ void main() {
     var throttled = true;
     await pumpApp(
       tester,
-      store: MemoryKeyStore('k'),
       server: (r) {
         if (throttled) return json({'message': 'Rate limit exceeded: 60 requests per minute.  Please try again in 12 seconds.'}, 429);
         return json(subjects);
@@ -350,7 +269,6 @@ void main() {
   testWidgets('voting on your own review (403) shows the API message and keeps the login', (tester) async {
     final seen = await pumpApp(
       tester,
-      store: MemoryKeyStore('k'),
       server: (r) {
         if (r.url.path == '/api/users/login') return json({'id': 1, 'name': 'Jane', 'token': 'tok'});
         if (r.url.path == '/api/reviews/7/helpful') return json({'message': 'You cannot vote on your own review.'}, 403);
@@ -376,16 +294,20 @@ void main() {
     expect(find.widgetWithText(FilledButton, 'Log in'), findsNothing);
   });
 
+  Future<void> openMenu(WidgetTester tester) async {
+    await tester.tap(find.byIcon(Icons.account_circle));
+    await tester.pumpAndSettle();
+  }
+
   Future<List<http.Request>> pumpLoggedIn(WidgetTester tester, http.Response? Function(http.Request) extra) async {
     final seen = await pumpApp(
       tester,
-      store: MemoryKeyStore('k'),
       server: (r) {
         if (r.url.path == '/api/users/login') return json({'id': 1, 'name': 'Jane', 'token': 'tok'});
         return extra(r) ?? json(subjects);
       },
     );
-    await tester.tap(find.text('Log in / Register'));
+    await tester.tap(find.text('Log in'));
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(TextField, 'Email'), 'jane@example.com');
     await tester.enterText(find.widgetWithText(TextField, 'Password'), 'pw');
@@ -399,6 +321,7 @@ void main() {
       if (r.method == 'DELETE') return json({'message': 'Wrong password.'}, 403);
       return null;
     });
+    await openMenu(tester);
     await tester.tap(find.text('Delete my account'));
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(TextField, 'Password'), 'wrong');
@@ -414,6 +337,7 @@ void main() {
 
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
+    await openMenu(tester);
     expect(find.text('Log out'), findsOneWidget); // still logged in
   });
 
@@ -422,6 +346,7 @@ void main() {
       if (r.method == 'DELETE') return json({'message': 'Account deleted.', 'purged': {'reviews': 1, 'comments': 0, 'votes': 0}});
       return null;
     });
+    await openMenu(tester);
     await tester.tap(find.text('Delete my account'));
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(TextField, 'Password'), 'pw');
@@ -434,8 +359,8 @@ void main() {
     expect(del.url.queryParameters['purge'], 'true');
     expect(del.headers['Authorization'], 'Bearer tok');
     expect(find.text('Your account was deleted.'), findsOneWidget);
-    expect(find.text('Log in / Register'), findsOneWidget); // logged out
-    expect(find.text('Delete my account'), findsNothing);
+    expect(find.text('Log in'), findsOneWidget); // logged out
+    expect(find.byIcon(Icons.account_circle), findsNothing);
   });
 
   group('wording shared by the SimpleAPI samples', () {
@@ -454,37 +379,59 @@ void main() {
       expect(describeError(StateError('boom')), 'Something went wrong. Please try again.');
     });
 
-    testWidgets('no key: the body and the button', (tester) async {
+    testWidgets('the login screen shows the demo notice and the demo button, on login and on register', (tester) async {
       await pumpApp(tester, server: (_) => json(subjects));
-      expect(find.text('Get a free key, then paste it under Settings.'), findsOneWidget);
-      expect(find.widgetWithText(FilledButton, 'Get a free key'), findsOneWidget);
-    });
-
-    testWidgets('Settings with the demo key: status line, storage note and Remove my key', (tester) async {
-      await pumpApp(tester, buildKey: 'demo-key', server: (_) => json(subjects));
-      await openSettings(tester);
-      expect(find.textContaining('You are using the shared demo key.'), findsOneWidget);
-      expect(find.textContaining('Your key is stored only in this browser (localStorage) and sent only to reviews.simpleapi.dev.'), findsOneWidget);
-      expect(find.text('Remove my key'), findsNothing);
-    });
-
-    testWidgets('the login screen warns that demo accounts are public while the demo key is in use', (tester) async {
-      await pumpApp(tester, buildKey: 'demo-key', server: (_) => json(subjects));
-      await tester.tap(find.text('Log in / Register'));
+      await tester.tap(find.text('Log in'));
       await tester.pumpAndSettle();
-      expect(find.text('Demo accounts are shared and public. Do not use a real password or any private details.'), findsOneWidget);
+      expect(find.text('This is a shared demo. Data resets every night. Do not use a real password or any private details.'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, 'Try the demo account'), findsOneWidget);
       expect(find.text('At least 8 characters'), findsNothing);
       await tester.tap(find.text('Create an account'));
       await tester.pumpAndSettle();
       expect(find.text('At least 8 characters'), findsOneWidget);
+      expect(find.text('This is a shared demo. Data resets every night. Do not use a real password or any private details.'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, 'Try the demo account'), findsOneWidget);
     });
 
-    testWidgets('no demo notice on the login screen with your own key', (tester) async {
-      final store = MemoryKeyStore()..write('my-own-key');
-      await pumpApp(tester, store: store, buildKey: 'demo-key', server: (_) => json(subjects));
-      await tester.tap(find.text('Log in / Register'));
+    testWidgets('"Try the demo account" logs in as the demo user in one click, without the bearer token', (tester) async {
+      final seen = await pumpApp(tester, server: (r) {
+        if (r.url.path == '/api/users/login') return json({'id': 1, 'name': 'Demo', 'token': 'tok'});
+        return json(subjects);
+      });
+      await tester.tap(find.text('Log in'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('Demo accounts are shared and public'), findsNothing);
+      await tester.tap(find.text('Try the demo account'));
+      await tester.pumpAndSettle();
+
+      final login = seen.singleWhere((r) => r.url.path == '/api/users/login');
+      expect(jsonDecode(login.body), {'email': 'demo@simpleapi.dev', 'password': 'try-the-demo'});
+      expect(login.headers.containsKey('Authorization'), isFalse);
+      expect(find.byIcon(Icons.account_circle), findsOneWidget); // back on Subjects, logged in
+      expect(find.text('Log in'), findsNothing);
+    });
+
+    testWidgets('voting while logged out opens a login screen that offers the demo account', (tester) async {
+      await pumpApp(tester, server: (r) => json(r.url.path == '/api/reviews' ? reviews : subjects));
+      await tester.tap(find.text('blue-bike'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.thumb_up_outlined).first);
+      await tester.pumpAndSettle();
+      expect(find.text('Try the demo account'), findsOneWidget);
+    });
+
+    testWidgets('back arrow: tooltip, and it opens the SimpleAPI home page', (tester) async {
+      await pumpApp(tester, server: (_) => json(subjects));
+      expect(find.byTooltip('Back to SimpleAPI'), findsOneWidget);
+      await tester.tap(find.byTooltip('Back to SimpleAPI'));
+      expect(opened, ['https://simpleapi.dev']);
+    });
+
+    testWidgets('inner screens keep the normal back arrow, not the home one', (tester) async {
+      await pumpApp(tester, server: (r) => json(r.url.path == '/api/reviews' ? reviews : subjects));
+      await tester.tap(find.text('blue-bike'));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Back to SimpleAPI'), findsNothing);
+      expect(find.byType(BackButton), findsOneWidget);
     });
 
     http.Response fullServer(http.Request r) => r.url.path == '/api/users/register'
@@ -492,7 +439,7 @@ void main() {
         : json(subjects);
 
     Future<void> register(WidgetTester tester) async {
-      await tester.tap(find.text('Log in / Register'));
+      await tester.tap(find.text('Log in'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Create an account'));
       await tester.pumpAndSettle();
@@ -503,27 +450,25 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('a full demo key (403 on register) gets the demo-full message', (tester) async {
-      await pumpApp(tester, buildKey: 'demo-key', server: fullServer);
+    testWidgets('a full demo (403 on register) gets the demo-full message', (tester) async {
+      await pumpApp(tester, server: fullServer);
       await register(tester);
-      expect(find.textContaining('shared demo has reached its limit of 25 users'), findsOneWidget);
+      expect(find.text('The demo is full. It resets every night.'), findsOneWidget);
     });
 
-    testWidgets('with your own key a 403 on register shows the API message', (tester) async {
-      final store = MemoryKeyStore()..write('my-own-key');
-      await pumpApp(tester, store: store, buildKey: 'demo-key', server: fullServer);
-      await register(tester);
-      expect(find.text('Maximum number of user accounts (25) per key has been reached.'), findsOneWidget);
+    testWidgets('constants: the public demo account', (tester) async {
+      expect(demoEmail, 'demo@simpleapi.dev');
+      expect(demoPassword, 'try-the-demo');
     });
 
     testWidgets('a network failure reads the same everywhere', (tester) async {
-      await pumpApp(tester, buildKey: 'demo-key', server: (_) => throw http.ClientException('socket detail'));
+      await pumpApp(tester, server: (_) => throw http.ClientException('socket detail'));
       expect(find.text('Could not reach reviews.simpleapi.dev. Check your connection and try again.'), findsOneWidget);
       expect(find.textContaining('socket detail'), findsNothing);
     });
 
     testWidgets('an empty subject list is padded, not flush against the edge', (tester) async {
-      await pumpApp(tester, buildKey: 'demo-key', server: (_) => json({'subjects': []}));
+      await pumpApp(tester, server: (_) => json({'subjects': []}));
       final padding = find.ancestor(of: find.textContaining('No subjects yet'), matching: find.byType(Padding));
       expect(padding, findsWidgets);
     });
