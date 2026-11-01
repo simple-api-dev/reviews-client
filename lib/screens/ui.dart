@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../config.dart';
+import '../open_url.dart';
 import '../reviews_api.dart';
 
 /// Turns any error into a sentence the user can read. The wording is shared by
@@ -8,13 +10,20 @@ String describeError(Object e) {
   if (e is! ApiException) return 'Something went wrong. Please try again.';
   if (e.statusCode == 0) return e.message; // "Could not reach <host>. Check your connection and try again."
   if (e.sessionEnded) return 'Your session has ended. Please log in again.';
-  if (e.keyRejected) return 'The API key was not accepted. Check it under Settings.';
+  if (e.keyRejected) return 'The API key was not accepted.';
   return switch (e.statusCode) {
     404 => 'Not found. It may already have been deleted.',
     429 => 'Too many requests. Wait a few seconds and try again.',
     _ => e.message, // 401 login, 403, 409, 422 and the rest: the API's own message
   };
 }
+
+/// The leading item of a top-level app bar: back to the SimpleAPI home page, in the same tab.
+Widget backToSimpleApi(UrlOpener openUrl) => IconButton(
+      icon: const Icon(Icons.arrow_back),
+      tooltip: 'Back to SimpleAPI',
+      onPressed: () => openUrl(homeUrl),
+    );
 
 void showSnack(BuildContext context, String text) {
   ScaffoldMessenger.of(context)
@@ -67,11 +76,11 @@ class Centered extends StatelessWidget {
       Align(alignment: Alignment.topCenter, child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 720), child: child));
 }
 
-/// Said on the login and register screens while the shared demo key is in use.
-const demoNoticeText = 'Demo accounts are shared and public. Do not use a real password or any private details.';
+/// Said on the login and register screens. Same wording in all the SimpleAPI demos.
+const demoNoticeText = 'This is a shared demo. Data resets every night. Do not use a real password or any private details.';
 
-/// Shown instead of the API's message when the shared demo key has no room for another user.
-const demoFullMessage = 'The shared demo has reached its limit of 25 users. Get a free key and paste it under Settings to register your own users.';
+/// Shown instead of the API's message when the demo has no room for another user.
+const demoFullMessage = 'The demo is full. It resets every night.';
 
 class DemoNotice extends StatelessWidget {
   const DemoNotice({super.key});

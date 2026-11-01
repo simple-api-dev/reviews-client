@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../app_state.dart';
+import '../config.dart';
+import '../models.dart';
 import '../reviews_api.dart';
 import 'ui.dart';
 
-/// Log in or register. Users belong to your key, so you can
-/// register freely; there is no email check unless you register the email
+/// Log in or register, or try the shared demo account. Users belong to the key, so
+/// anyone can register freely; there is no email check unless you register the email
 /// address your key belongs to (then a code is emailed, see the README).
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key, required this.state});
@@ -32,26 +34,33 @@ class _AuthScreenState extends State<AuthScreen> {
     super.dispose();
   }
 
-  Future<void> _submit() async {
+  Future<void> _submit() => _run(_email.text, () {
+        final api = widget.state.api;
+        // POST /api/users/register  or  POST /api/users/login
+        return _register
+            ? api.register(name: _name.text.trim(), email: _email.text.trim(), password: _password.text)
+            : api.login(email: _email.text.trim(), password: _password.text);
+      });
+
+  /// One click: log in as the shared demo user (POST /api/users/login).
+  Future<void> _demo() => _run(demoEmail, () => widget.state.api.login(email: demoEmail, password: demoPassword));
+
+  Future<void> _run(String email, Future<AuthResult> Function() call) async {
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      final api = widget.state.api;
-      // POST /api/users/register  or  POST /api/users/login
-      final result = _register
-          ? await api.register(name: _name.text.trim(), email: _email.text.trim(), password: _password.text)
-          : await api.login(email: _email.text.trim(), password: _password.text);
+      final result = await call();
       if (result.token == null) {
         if (mounted) setState(() => _error = result.message);
         return;
       }
-      widget.state.loggedInAs(result.name.isEmpty ? 'you' : result.name);
+      widget.state.loggedInAs(result.name.isEmpty ? 'you' : result.name, email: email);
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
-      // The shared demo key holds only 25 users, so on a busy demo the API answers 403.
-      final demoFull = _register && !widget.state.usingOwnKey && e is ApiException && e.statusCode == 403;
+      // The demo key holds only 25 users, so on a busy demo registering answers 403.
+      final demoFull = _register && e is ApiException && e.statusCode == 403;
       if (mounted) setState(() => _error = demoFull ? demoFullMessage : describeError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -64,7 +73,17 @@ class _AuthScreenState extends State<AuthScreen> {
       appBar: AppBar(title: Text(_register ? 'Register' : 'Log in')),
       body: Centered(
         child: ListView(padding: const EdgeInsets.all(24), children: [
-          if (!widget.state.usingOwnKey) ...[const DemoNotice(), const SizedBox(height: 16)],
+          const DemoNotice(),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonalIcon(
+              onPressed: _busy ? null : _demo,
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('Try the demo account'),
+            ),
+          ),
+          const SizedBox(height: 16),
           if (_register) ...[
             TextField(controller: _name, decoration: const InputDecoration(labelText: 'Name', border: OutlineInputBorder())),
             const SizedBox(height: 12),
@@ -87,9 +106,8 @@ class _AuthScreenState extends State<AuthScreen> {
           ),
           if (_error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
           const SizedBox(height: 16),
-          Row(children: [
+          Wrap(spacing: 12, children: [
             FilledButton(onPressed: _busy ? null : _submit, child: Text(_register ? 'Register' : 'Log in')),
-            const SizedBox(width: 12),
             TextButton(
               onPressed: () => setState(() => _register = !_register),
               child: Text(_register ? 'I already have an account' : 'Create an account'),

@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../app_state.dart';
-import '../config.dart';
 import '../models.dart';
 import '../open_url.dart';
 import 'auth_screen.dart';
 import 'delete_account_dialog.dart';
 import 'reviews_screen.dart';
-import 'settings_screen.dart';
 import 'ui.dart';
 
 /// Browse subjects (things that have reviews).
@@ -28,7 +26,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
   @override
   void initState() {
     super.initState();
-    _future = widget.state.hasKey ? _load() : Future.value(const []);
+    _future = _load();
   }
 
   @override
@@ -90,37 +88,33 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
       listenable: state,
       builder: (context, _) => Scaffold(
         appBar: AppBar(
-          title: const Text('Subjects'),
+          leading: backToSimpleApi(widget.openUrl),
+          title: const Text('SimpleAPI Reviews'),
           actions: [
-            if (!state.hasKey)
-              const SizedBox.shrink()
-            else if (state.loggedIn) ...[
-              Center(child: Text('Hi, ${state.userName ?? 'you'}')),
-              TextButton(onPressed: state.logout, child: const Text('Log out')),
-              TextButton(onPressed: _deleteAccount, child: const Text('Delete my account')),
-            ] else
+            if (state.loggedIn)
+              PopupMenuButton<VoidCallback>(
+                icon: const Icon(Icons.account_circle),
+                tooltip: 'Hi, ${state.userName ?? 'you'}',
+                onSelected: (action) => action(),
+                itemBuilder: (_) => [
+                  PopupMenuItem(enabled: false, child: Text('Hi, ${state.userName ?? 'you'}')),
+                  PopupMenuItem(value: state.logout, child: const Text('Log out')),
+                  if (!state.isDemoUser) PopupMenuItem(value: _deleteAccount, child: const Text('Delete my account')),
+                ],
+              )
+            else
               TextButton(
                 onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => AuthScreen(state: state))),
-                child: const Text('Log in / Register'),
+                child: const Text('Log in'),
               ),
-            TextButton(
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => SettingsScreen(state: state, openUrl: widget.openUrl)),
-              ),
-              child: const Text('Settings'),
-            ),
           ],
         ),
-        floatingActionButton: state.hasKey
-            ? FloatingActionButton.extended(
-                onPressed: _newSubject,
-                icon: const Icon(Icons.add),
-                label: const Text('Review something new'),
-              )
-            : null,
-        body: !state.hasKey
-            ? _NoKey(openUrl: widget.openUrl)
-            : Centered(
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: _newSubject,
+          icon: const Icon(Icons.add),
+          label: const Text('Review something new'),
+        ),
+        body: Centered(
           child: Column(children: [
             Padding(
               padding: const EdgeInsets.all(12),
@@ -171,30 +165,6 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
             ),
           ]),
         ),
-      ),
-    );
-  }
-}
-
-/// Shown when the site was built without a demo key and the visitor has not
-/// saved their own.
-class _NoKey extends StatelessWidget {
-  const _NoKey({required this.openUrl});
-
-  final UrlOpener openUrl;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('This demo has no key configured', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          const Text('Get a free key, then paste it under Settings.', textAlign: TextAlign.center),
-          const SizedBox(height: 12),
-          FilledButton(onPressed: () => openUrl(getKeyUrl), child: const Text('Get a free key')),
-        ]),
       ),
     );
   }

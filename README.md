@@ -15,7 +15,7 @@ flutter pub get
 flutter run -d chrome --dart-define=SIMPLEAPI_KEY=YOUR_KEY
 ```
 
-Without `--dart-define` the app opens on a "get a free key" message; paste your key under **Settings**. Run the tests (all HTTP is mocked, nothing calls the real API):
+The app uses only the key passed with `--dart-define`; there is no key entry in the app. On the live demo, press **Try the demo account** on the login screen to log in as the shared demo user in one click. Run the tests (all HTTP is mocked, nothing calls the real API):
 
 ```bash
 flutter test
@@ -33,28 +33,33 @@ final response = await http.get(uri, headers: {
 });
 ```
 
-The rest of the app never touches HTTP. The login token is held in memory only, so reloading the page logs you out while your own key, if you saved one, stays.
+The rest of the app never touches HTTP. The login token is held in memory only, so reloading the page logs you out.
 
 ## Screens and API calls
 
 | Screen | What it does | Calls |
 | --- | --- | --- |
-| **Subjects** (`subjects_screen.dart`) | The landing screen. Browse things that have reviews, with count and average; search by name prefix; start a review for a new subject. | `GET /api/subjects` |
-| **Settings** (`settings_screen.dart`) | Use your own key instead of the shared demo key (or remove it again). | `GET /api/subjects` (a one-item request used to check the key) |
-| **Log in / Register** (`auth_screen.dart`) | Get a token. Opened automatically when you try to write or vote. | `POST /api/users/register`, `POST /api/users/login`, `POST /api/users/logout` |
+| **Subjects** (`subjects_screen.dart`) | The landing screen, with a back arrow to simpleapi.dev. Browse things that have reviews, with count and average; search by name prefix; start a review for a new subject. | `GET /api/subjects` |
+| **Log in / Register** (`auth_screen.dart`) | Get a token, or press **Try the demo account** to log in as the shared demo user. Opened automatically when you try to write or vote. | `POST /api/users/register`, `POST /api/users/login`, `POST /api/users/logout` |
 | **Delete my account** (`delete_account_dialog.dart`) | Shown in the Subjects bar when logged in. Asks for your password; the checkbox "Also delete my reviews and comments" adds `purge=true`. | `DELETE /api/users/me` (password in the JSON body), `DELETE /api/users/me?purge=true` |
 | **Reviews** (`reviews_screen.dart`) | One subject: average, 1-5 star breakdown, sortable reviews, helpful / not helpful votes (click again to take a vote back), write a review. | `GET /api/reviews?subject=`, `POST /api/reviews`, `POST /api/reviews/{id}/helpful`, `POST /api/reviews/{id}/unhelpful`, `DELETE /api/reviews/{id}/vote` |
 | **Review** (`review_screen.dart`) | A review with its comments; add a comment. | `GET /api/reviews/{id}/comments`, `POST /api/reviews/{id}/comments` |
 
 The API also has calls this sample does not use (editing and deleting your own reviews and comments, `GET /api/users/me`, password reset, listing a user's reviews); see the [full docs](https://reviews.simpleapi.dev/docs).
 
-## Keys
+## Use your own key
 
-Get a free key at [keys.simpleapi.dev](https://keys.simpleapi.dev/?product=reviews): email, 6 digit code, done. In the app open **Settings**, paste it and press **Save key**. It is checked with one call and kept only in your browser's localStorage, where it overrides the shared demo key. **Remove my key** goes back to the demo key. Keys are sent only to `reviews.simpleapi.dev`.
+The live demo is built with a shared demo key. To run the app on your own key, get a free one at [keys.simpleapi.dev](https://keys.simpleapi.dev/?product=reviews) (email, 6 digit code, done) and start it with:
 
-Reading needs just the key. Writing (reviews, comments, votes) also needs a logged-in user, whom you can register inside the app. Users belong to your key, so every developer has their own set of users.
+```bash
+flutter run -d chrome --dart-define=SIMPLEAPI_KEY=YOUR_KEY
+```
 
-The live demo uses a shared demo key, so its accounts are public: do not use a real password there.
+Keys are sent only to `reviews.simpleapi.dev`. Reading needs just the key. Writing (reviews, comments, votes) also needs a logged-in user, whom you can register inside the app. Users belong to your key, so every developer has their own set of users.
+
+## The demo account
+
+The live demo has a shared demo user, `demo@simpleapi.dev` with the password `try-the-demo`, behind the **Try the demo account** button (the constants are in [`lib/config.dart`](lib/config.dart); they are public by design). The login and register screens say: "This is a shared demo. Data resets every night. Do not use a real password or any private details." When the demo key has no room for another user, registering shows "The demo is full. It resets every night." Every night the demo's users and content are deleted and the sample data is restored.
 
 ## Good to know
 
@@ -71,10 +76,9 @@ The live demo uses a shared demo key, so its accounts are public: do not use a r
 ```
 lib/reviews_api.dart      the whole API client
 lib/models.dart           response classes
-lib/app_state.dart        saved key + logged-in user (a ChangeNotifier)
-lib/key_store*.dart       localStorage wrapper (+ in-memory one for tests)
-lib/open_url*.dart        opens a link in a new tab
-lib/config.dart           the build-time key (SIMPLEAPI_KEY)
+lib/app_state.dart        the API client + logged-in user (a ChangeNotifier)
+lib/open_url*.dart        opens a link in the same tab (the back arrow)
+lib/config.dart           the build-time key (SIMPLEAPI_KEY), the demo account
 lib/screens/              the screens (ui.dart holds the shared widgets and error wording)
 test/                     unit tests for the client, widget tests for the app
 ```
@@ -89,7 +93,7 @@ To use it in your own copy:
 2. Add a repository **variable** (not a secret) named `SIMPLEAPI_KEY` under **Settings -> Secrets and variables -> Actions -> Variables**. The workflow builds with `--dart-define=SIMPLEAPI_KEY=...`.
 3. If you rename the repository, change `--base-href` in the workflow to match.
 
-Anything passed with `--dart-define` ends up in the compiled JavaScript, so anyone can read it from the deployed site. Use a free key made for a public demo. If the variable is empty, the app shows "This demo has no key configured" with a link to get one.
+Anything passed with `--dart-define` ends up in the compiled JavaScript, so anyone can read it from the deployed site. Use a free key made for a public demo. If the variable is empty, every call is rejected with a 401 and the app shows the error message.
 
 ## License
 
