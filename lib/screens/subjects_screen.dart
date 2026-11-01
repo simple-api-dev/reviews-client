@@ -35,8 +35,9 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
     super.dispose();
   }
 
-  // GET /api/subjects?q=...
-  Future<List<Subject>> _load() => widget.state.api.listSubjects(q: _search.text.trim());
+  // GET /api/subjects?q=... Subjects show as `Blue Bike` but are stored as `blue-bike`.
+  Future<List<Subject>> _load() =>
+      widget.state.api.listSubjects(q: _search.text.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '-'));
 
   void _reload() => setState(() {
         _future = _load();

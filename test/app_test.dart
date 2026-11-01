@@ -139,6 +139,14 @@ void main() {
     expect(subjectName('SKU-42'), 'SKU-42');
   });
 
+  testWidgets('searching for a subject by the name it shows finds it', (tester) async {
+    final seen = await pumpApp(tester, server: (r) => json(subjects));
+    await tester.enterText(find.byType(TextField).first, 'Blue Bike');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+    expect(seen.last.url.queryParameters['q'], 'blue-bike');
+  });
+
   testWidgets('a review or comment with no author says by Unknown', (tester) async {
     final noAuthor = {
       ...reviews,
