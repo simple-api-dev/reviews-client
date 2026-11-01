@@ -71,7 +71,7 @@ The live demo has a shared demo user, `demo@simpleapi.dev` with the password `tr
 - Writing a review or a comment answers `201` with the new object. Taking back a vote answers `{"message": "..."}`, so the app works out the new counters itself.
 - Timestamps are UTC, like `2026-11-01T03:47:06Z`.
 - `author` is the writer's name, or `null` if there is none. The app shows `by <author>`, or `by Unknown`.
-- A subject is a slug, such as `pizza-palace`. The app shows it as `Pizza Palace` and sends the slug in every call.
+- A subject is any id or slug. The app shows a lowercase slug such as `pizza-palace` as `Pizza Palace`, and sends the stored text in every call.
 - The API allows 60 requests a minute per IP address and answers `429` beyond that.
 
 ## Project layout
