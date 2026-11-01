@@ -20,17 +20,23 @@ class AppState extends ChangeNotifier {
   late final ReviewsApi api;
   String? userName;
 
+  /// True for the shared demo account. Every visitor uses it, so the app does
+  /// not offer to delete it.
+  bool isDemoUser = false;
+
   bool get loggedIn => api.token != null;
 
   /// The API rejected our token (e.g. the user logged in elsewhere): the api
   /// object already dropped it, so just update what the screens show.
   void _sessionExpired() {
     userName = null;
+    isDemoUser = false;
     notifyListeners();
   }
 
-  void loggedInAs(String name) {
+  void loggedInAs(String name, {required String email}) {
     userName = name;
+    isDemoUser = email.trim().toLowerCase() == demoEmail;
     notifyListeners();
   }
 
@@ -43,6 +49,7 @@ class AppState extends ChangeNotifier {
   }) async {
     await api.deleteAccount(password: password, purge: purge);
     userName = null;
+    isDemoUser = false;
     notifyListeners();
   }
 
@@ -53,6 +60,7 @@ class AppState extends ChangeNotifier {
       api.token = null; // token already invalid: just drop it
     }
     userName = null;
+    isDemoUser = false;
     notifyListeners();
   }
 }

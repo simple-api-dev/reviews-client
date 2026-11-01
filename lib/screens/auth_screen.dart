@@ -34,7 +34,7 @@ class _AuthScreenState extends State<AuthScreen> {
     super.dispose();
   }
 
-  Future<void> _submit() => _run(() {
+  Future<void> _submit() => _run(_email.text, () {
         final api = widget.state.api;
         // POST /api/users/register  or  POST /api/users/login
         return _register
@@ -43,9 +43,9 @@ class _AuthScreenState extends State<AuthScreen> {
       });
 
   /// One click: log in as the shared demo user (POST /api/users/login).
-  Future<void> _demo() => _run(() => widget.state.api.login(email: demoEmail, password: demoPassword));
+  Future<void> _demo() => _run(demoEmail, () => widget.state.api.login(email: demoEmail, password: demoPassword));
 
-  Future<void> _run(Future<AuthResult> Function() call) async {
+  Future<void> _run(String email, Future<AuthResult> Function() call) async {
     setState(() {
       _busy = true;
       _error = null;
@@ -56,7 +56,7 @@ class _AuthScreenState extends State<AuthScreen> {
         if (mounted) setState(() => _error = result.message);
         return;
       }
-      widget.state.loggedInAs(result.name.isEmpty ? 'you' : result.name);
+      widget.state.loggedInAs(result.name.isEmpty ? 'you' : result.name, email: email);
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       // The demo key holds only 25 users, so on a busy demo registering answers 403.

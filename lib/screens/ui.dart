@@ -10,7 +10,7 @@ String describeError(Object e) {
   if (e is! ApiException) return 'Something went wrong. Please try again.';
   if (e.statusCode == 0) return e.message; // "Could not reach <host>. Check your connection and try again."
   if (e.sessionEnded) return 'Your session has ended. Please log in again.';
-  if (e.keyRejected) return 'The API key was not accepted. Check it under Settings.';
+  if (e.keyRejected) return 'The API key was not accepted.';
   return switch (e.statusCode) {
     404 => 'Not found. It may already have been deleted.',
     429 => 'Too many requests. Wait a few seconds and try again.',

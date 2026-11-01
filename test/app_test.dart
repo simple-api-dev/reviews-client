@@ -71,7 +71,7 @@ void main() {
       tester,
       server: (_) => json({'message': 'Unauthorized. Please provide a valid apikey. Get a free key at https://keys.simpleapi.dev/?product=reviews'}, 401),
     );
-    expect(find.text('The API key was not accepted. Check it under Settings.'), findsOneWidget);
+    expect(find.text('The API key was not accepted.'), findsOneWidget);
     expect(find.text('Try again'), findsOneWidget);
   });
 
@@ -316,6 +316,41 @@ void main() {
     return seen;
   }
 
+  group('The shared demo user cannot delete the account', () {
+    Future<void> pumpLoggedOut(WidgetTester tester) async {
+      await pumpApp(
+        tester,
+        server: (r) {
+          if (r.url.path == '/api/users/login') return json({'id': 1, 'name': 'Demo User', 'token': 'tok'});
+          return json(subjects);
+        },
+      );
+      await tester.tap(find.text('Log in'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('after the Try the demo account button', (tester) async {
+      await pumpLoggedOut(tester);
+      await tester.tap(find.text('Try the demo account'));
+      await tester.pumpAndSettle();
+      await openMenu(tester);
+
+      expect(find.text('Log out'), findsOneWidget);
+      expect(find.text('Delete my account'), findsNothing);
+    });
+
+    testWidgets('after typing the demo email by hand', (tester) async {
+      await pumpLoggedOut(tester);
+      await tester.enterText(find.widgetWithText(TextField, 'Email'), ' Demo@SimpleAPI.dev ');
+      await tester.enterText(find.widgetWithText(TextField, 'Password'), 'try-the-demo');
+      await tester.tap(find.widgetWithText(FilledButton, 'Log in'));
+      await tester.pumpAndSettle();
+      await openMenu(tester);
+
+      expect(find.text('Delete my account'), findsNothing);
+    });
+  });
+
   testWidgets('Delete my account: a wrong password (403) is shown and the user stays logged in', (tester) async {
     final seen = await pumpLoggedIn(tester, (r) {
       if (r.method == 'DELETE') return json({'message': 'Wrong password.'}, 403);
@@ -368,7 +403,7 @@ void main() {
 
     test('describeError', () {
       expect(say(0, 'Could not reach reviews.simpleapi.dev. Check your connection and try again.'), 'Could not reach reviews.simpleapi.dev. Check your connection and try again.');
-      expect(say(401, 'Unauthorized. Please provide a valid apikey. Get a free key at https://keys.simpleapi.dev/?product=reviews'), 'The API key was not accepted. Check it under Settings.');
+      expect(say(401, 'Unauthorized. Please provide a valid apikey. Get a free key at https://keys.simpleapi.dev/?product=reviews'), 'The API key was not accepted.');
       expect(say(401, 'Invalid auth token. Log in again.', sessionEnded: true), 'Your session has ended. Please log in again.');
       expect(say(401, 'Invalid email or password.'), 'Invalid email or password.');
       expect(say(403, 'Wrong password.'), 'Wrong password.');

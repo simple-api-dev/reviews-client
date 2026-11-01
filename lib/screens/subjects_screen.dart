@@ -99,7 +99,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                 itemBuilder: (_) => [
                   PopupMenuItem(enabled: false, child: Text('Hi, ${state.userName ?? 'you'}')),
                   PopupMenuItem(value: state.logout, child: const Text('Log out')),
-                  PopupMenuItem(value: _deleteAccount, child: const Text('Delete my account')),
+                  if (!state.isDemoUser) PopupMenuItem(value: _deleteAccount, child: const Text('Delete my account')),
                 ],
               )
             else
