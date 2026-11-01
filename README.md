@@ -23,14 +23,12 @@ flutter test
 
 ## How it calls the API
 
-Every call is one method in [`lib/reviews_api.dart`](lib/reviews_api.dart). The key goes in the `apikey` query parameter; writes also send the user's bearer token:
+Every call is one method in [`lib/reviews_api.dart`](lib/reviews_api.dart). The key goes in the `apikey` query parameter; writes also send the user's bearer token. Every list answers `{data, total, page, per_page}`, with `summary` beside it on the review lists:
 
 ```dart
 final uri = Uri.https('reviews.simpleapi.dev', '/api/reviews', {'subject': 'pizza-palace', 'apikey': apiKey});
-final response = await http.get(uri, headers: {
-  'Accept': 'application/json',
-  if (token != null) 'Authorization': 'Bearer $token', // writes only
-});
+final response = await http.get(uri, headers: {'Accept': 'application/json'});
+final reviews = jsonDecode(response.body)['data'];
 ```
 
 The rest of the app never touches HTTP. The login token is held in memory only, so reloading the page logs you out.
@@ -45,7 +43,7 @@ The rest of the app never touches HTTP. The login token is held in memory only, 
 | **Reviews** (`reviews_screen.dart`) | One subject: average, 1-5 star breakdown, sortable reviews, helpful / not helpful votes (click again to take a vote back), write a review. | `GET /api/reviews?subject=`, `POST /api/reviews`, `POST /api/reviews/{id}/helpful`, `POST /api/reviews/{id}/unhelpful`, `DELETE /api/reviews/{id}/vote` |
 | **Review** (`review_screen.dart`) | A review with its comments; add a comment. | `GET /api/reviews/{id}/comments`, `POST /api/reviews/{id}/comments` |
 
-The API also has calls this sample does not use (editing and deleting your own reviews and comments, `GET /api/users/me`, password reset, listing a user's reviews); see the [full docs](https://reviews.simpleapi.dev/docs).
+The API also has calls this sample does not use (editing and deleting your own reviews and comments, `GET` and `PUT /api/users/me`, password reset, listing a user's reviews); see the [full docs](https://reviews.simpleapi.dev/docs).
 
 ## Use your own key
 
@@ -63,12 +61,15 @@ The live demo has a shared demo user, `demo@simpleapi.dev` with the password `tr
 
 ## Good to know
 
-- Errors come back as `{"message": "..."}`. The app turns the common ones into the same short sentences in all the SimpleAPI samples (see `describeError` in `lib/screens/ui.dart`) and shows the API's own message for 401 on login, 403, 409 and 422.
-- A bad or missing key answers `401`. So does a wrong email or password on login (`"Invalid email or password."`), which is not an expired session. A token that is no longer valid also answers `401`: the app drops it and asks the user to log in again. Login and register never send the bearer token.
-- Register: `201` with a token, `409` if the email is taken, `422` for invalid input, `400` for a malformed JSON body, `403` when the key already has 25 users.
+- Errors come back as `{"message": "..."}`, on every status. The app turns the common ones into the same short sentences in all the SimpleAPI samples (see `describeError` in `lib/screens/ui.dart`) and shows the API's own message for 401 on login, 403, 409 and 422.
+- A bad or missing key answers `401`. So does a wrong email or password on login (`"Invalid email or password."`), which is not an expired session. A token that is no longer valid also answers `401`, on any route it is sent to: the app drops it and asks the user to log in again. Login and register never send the bearer token, and neither does reading, which needs only the key.
+- Register and login answer `{"token": "...", "expires_at": "...", "user": {...}}`. A token lasts 30 days, and a user can have 20 sessions, so logging in on a second device leaves the first one logged in. Logging out ends this session only.
+- Register: `201`, `409` if the email is taken, `422` for invalid input, `400` for a malformed JSON body, `403` when the key already has 25 users.
 - Registering with the email address your key belongs to answers `202` and emails a confirmation code instead of returning a token (`POST /api/users/register/confirm`). The sample shows the message but does not implement the confirmation step; use a different address to try it out.
 - `DELETE /api/users/me` needs your password in the JSON body (`403` if wrong, `422` if missing). Without `purge=true` your reviews and comments stay, attributed to your deleted user id; with it they are deleted and the vote counters are recounted.
 - You get one review per user per subject; a second one answers `409`.
+- Writing a review or a comment answers `201` with the new object. Taking back a vote answers `{"message": "..."}`, so the app works out the new counters itself.
+- Timestamps are UTC, like `2026-11-01T03:47:06Z`.
 - The API allows 60 requests a minute per IP address and answers `429` beyond that.
 
 ## Project layout

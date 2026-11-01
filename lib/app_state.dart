@@ -26,7 +26,7 @@ class AppState extends ChangeNotifier {
 
   bool get loggedIn => api.token != null;
 
-  /// The API rejected our token (e.g. the user logged in elsewhere): the api
+  /// The API rejected our token (e.g. the session ended): the api
   /// object already dropped it, so just update what the screens show.
   void _sessionExpired() {
     userName = null;
