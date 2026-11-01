@@ -8,6 +8,9 @@ int _int(Object? v) => v is num ? v.toInt() : int.tryParse('$v') ?? 0;
 double _double(Object? v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
 String _str(Object? v) => v == null ? '' : '$v';
 
+/// `author` is a name or null, and a blank name counts as none.
+String? _name(Object? v) => v is String && v.trim().isNotEmpty ? v : null;
+
 /// An item that has reviews (an id or slug chosen by whoever posted the first
 /// review), with its review count and average rating.
 class Subject {
@@ -41,7 +44,7 @@ class Review {
   factory Review.fromJson(Map<String, dynamic> j) => Review(
         id: _int(j['id']),
         subject: _str(j['subject']),
-        author: _str(j['author']),
+        author: _name(j['author']),
         rating: _int(j['rating']),
         title: _str(j['title']),
         body: _str(j['body']),
@@ -53,7 +56,7 @@ class Review {
 
   final int id;
   final String subject;
-  final String author;
+  final String? author;
   final int rating;
   final String title;
   final String body;
@@ -81,13 +84,13 @@ class Comment {
 
   factory Comment.fromJson(Map<String, dynamic> j) => Comment(
         id: _int(j['id']),
-        author: _str(j['author']),
+        author: _name(j['author']),
         body: _str(j['body']),
         commentedAt: _str(j['commented_at']),
       );
 
   final int id;
-  final String author;
+  final String? author;
   final String body;
   final String commentedAt;
 }

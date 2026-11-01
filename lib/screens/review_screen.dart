@@ -61,7 +61,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
   Widget build(BuildContext context) {
     final r = widget.review;
     return Scaffold(
-      appBar: AppBar(title: Text(r.subject)),
+      appBar: AppBar(title: Text(subjectName(r.subject))),
       body: Centered(
         child: Column(children: [
           Expanded(
@@ -73,7 +73,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Stars(r.rating),
                     Text(r.title, style: Theme.of(context).textTheme.titleLarge),
-                    Text('by ${r.author}', style: Theme.of(context).textTheme.bodySmall),
+                    Text(byAuthor(r.author), style: Theme.of(context).textTheme.bodySmall),
                     const SizedBox(height: 8),
                     Text(r.body),
                     const Divider(height: 32),
@@ -86,7 +86,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                 return ListView(children: [
                   header,
                   if (comments.isEmpty) const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Text('No comments yet.')),
-                  for (final c in comments) ListTile(title: Text(c.body), subtitle: Text(c.author)),
+                  for (final c in comments) ListTile(title: Text(c.body), subtitle: Text(byAuthor(c.author))),
                 ]);
               },
             ),

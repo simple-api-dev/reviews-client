@@ -149,7 +149,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                     itemBuilder: (context, i) {
                       final s = subjects[i];
                       return ListTile(
-                        title: Text(s.name),
+                        title: Text(subjectName(s.name)),
                         subtitle: Text('${s.count} review${s.count == 1 ? '' : 's'}'),
                         trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                           Stars(s.average),
