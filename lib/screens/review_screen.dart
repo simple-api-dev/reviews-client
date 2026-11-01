@@ -102,7 +102,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              FilledButton(onPressed: _busy ? null : _send, child: const Text('Send')),
+              FilledButton(onPressed: _busy ? null : _send, child: const Text('Comment')),
             ]),
           ),
         ]),

@@ -13,7 +13,7 @@ class ReviewsApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'SimpleAPI Reviews',
+      title: 'Reviews API sample | SimpleAPI',
       theme: ThemeData(
         colorSchemeSeed: const Color(0xFF0066CC),
         useMaterial3: true,

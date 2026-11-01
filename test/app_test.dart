@@ -378,7 +378,7 @@ void main() {
     await pumpApp(
       tester,
       server: (r) {
-        if (throttled) return json({'message': 'Rate limit exceeded: 60 requests per minute.  Please try again in 12 seconds.'}, 429);
+        if (throttled) return json({'message': 'Rate limit exceeded: 60 requests a minute per IP address. Please try again in 12 seconds.'}, 429);
         return json(subjects);
       },
     );
@@ -531,10 +531,10 @@ void main() {
       expect(say(401, 'Invalid email or password.'), 'Invalid email or password.');
       expect(say(403, 'Wrong password.'), 'Wrong password.');
       expect(say(403, 'The demo account cannot be changed.'), 'The demo account cannot be changed.');
-      expect(say(409, 'User registration failed, email already registered to this key.'), 'User registration failed, email already registered to this key.');
+      expect(say(409, 'That email is already registered to this key.'), 'That email is already registered to this key.');
       expect(say(422, 'The email format is invalid.'), 'The email format is invalid.');
       expect(say(404, 'Review 9 not found.'), 'Not found. It may already have been deleted.');
-      expect(say(429, 'Rate limit exceeded: 60 requests per minute.  Please try again in 5 seconds.'), 'Too many requests. Wait a few seconds and try again.');
+      expect(say(429, 'Rate limit exceeded: 60 requests a minute per IP address. Please try again in 5 seconds.'), 'Too many requests. Wait a few seconds and try again.');
       expect(say(503, 'Key service unavailable. Please try again shortly.'), 'The service is busy. Please try again shortly.');
       expect(describeError(StateError('boom')), 'Something went wrong. Please try again.');
     });
