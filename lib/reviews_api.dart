@@ -3,7 +3,7 @@
 /// Docs: https://reviews.simpleapi.dev/docs
 ///
 /// Two rules apply to every request:
-///  * the developer key goes in the `apikey` QUERY parameter (never a header);
+///  * the API key goes in the `apikey` query string (an `APIKEY` header also works);
 ///  * calls that write data also send `Authorization: Bearer <token>`, where
 ///    the token comes from [ReviewsApi.register] / [ReviewsApi.login].
 ///
@@ -238,6 +238,6 @@ class ReviewsApi {
       if (message is String && message.isNotEmpty) return message;
       if (decoded['errors'] != null) return '${decoded['errors']}';
     }
-    return 'Request failed (HTTP $status).';
+    return 'Something went wrong. Please try again.';
   }
 }

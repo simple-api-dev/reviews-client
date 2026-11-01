@@ -113,7 +113,7 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
                   ),
                 ]),
               ),
-              if (page.reviews.isEmpty) const Padding(padding: EdgeInsets.all(24), child: Text('No reviews yet. Be the first!')),
+              if (page.reviews.isEmpty) const Padding(padding: EdgeInsets.all(24), child: Text('No reviews yet. Write the first one.')),
               for (final r in page.reviews) _ReviewTile(
                 review: r,
                 vote: _votes[r.id],

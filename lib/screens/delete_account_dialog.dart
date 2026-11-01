@@ -65,7 +65,7 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
             value: _purge,
             onChanged: _busy ? null : (v) => setState(() => _purge = v ?? false),
             title: const Text('Also delete my reviews and comments'),
-            subtitle: const Text('Otherwise they stay on the site under your name.'),
+            subtitle: const Text('Otherwise they stay on the site, without your name.'),
           ),
           if (_error != null) Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
         ]),

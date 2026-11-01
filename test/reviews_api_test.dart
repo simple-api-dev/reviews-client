@@ -189,7 +189,7 @@ void main() {
 
   test('an error without a JSON body still gets a readable message', () async {
     final (api, _) = apiWith((_) => http.Response('oops', 500));
-    await expectLater(api.listSubjects(), throwsA(isA<ApiException>().having((e) => e.message, 'message', contains('500'))));
+    await expectLater(api.listSubjects(), throwsA(isA<ApiException>().having((e) => e.message, 'message', 'Something went wrong. Please try again.')));
   });
 
   group('a 401 on a request that carried a token', () {
@@ -310,7 +310,7 @@ void main() {
     test('409 duplicate register', () async {
       final e = await fails(
         409,
-        {'message': 'User registration failed, email already registered to this developer account.'},
+        {'message': 'That email is already registered to this key.'},
         (a) => a.register(name: 'J', email: 'a@b.co', password: 'longenough'),
       );
       expect(e.statusCode, 409);
@@ -334,10 +334,10 @@ void main() {
 
     test('429 throttling, with or without a JSON body, is readable and does not drop the login', () async {
       // A body-less 429 is covered too.
-      final e = await fails(429, {'message': 'Rate limit exceeded: 60 requests per minute.  Please try again in 30 seconds.'}, (a) => a.listSubjects(), token: 'keep-me');
-      expect(e.message, 'Rate limit exceeded: 60 requests per minute.  Please try again in 30 seconds.');
+      final e = await fails(429, {'message': 'Rate limit exceeded: 60 requests a minute per IP address. Please try again in 30 seconds.'}, (a) => a.listSubjects(), token: 'keep-me');
+      expect(e.message, 'Rate limit exceeded: 60 requests a minute per IP address. Please try again in 30 seconds.');
       final (api, _) = apiWith((_) => http.Response('', 429, headers: {'retry-after': '30'}), token: 'keep-me');
-      await expectLater(api.listSubjects(), throwsA(isA<ApiException>().having((x) => x.message, 'message', contains('429'))));
+      await expectLater(api.listSubjects(), throwsA(isA<ApiException>().having((x) => x.message, 'message', 'Something went wrong. Please try again.')));
       expect(api.token, 'keep-me');
     });
   });
@@ -377,10 +377,10 @@ void main() {
     });
 
     test('202 (the key owner\'s email) returns the message and no token', () async {
-      final (api, _) = apiWith((_) => json({'message': 'We sent a 6 digit code.', 'confirmation_required': true}, 202));
+      final (api, _) = apiWith((_) => json({'message': 'We sent a 6-digit code.', 'confirmation_required': true}, 202));
       final result = await api.register(name: 'Dev', email: 'dev@x.co', password: 'longenough');
       expect(result.token, isNull);
-      expect(result.message, 'We sent a 6 digit code.');
+      expect(result.message, 'We sent a 6-digit code.');
       expect(api.token, isNull);
     });
   });
